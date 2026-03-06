@@ -74,6 +74,8 @@ API credentials (`app_id` and `app_secret`) are extracted dynamically from the Q
 
 ## Credits
 
+Inspired by [Qobuz-RPC](https://github.com/Seeyaflying/Qobuz-RPC) by Seeyaflying.
+
 Qobuz API integration ported from [QobuzApiSharp](https://github.com/DJDoubleD/QobuzApiSharp) by DJDoubleD.
 
 ## Disclaimer
