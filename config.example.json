@@ -1,0 +1,12 @@
+{
+  "discord_app_id": "",
+  "qobuz_email": "",
+  "qobuz_pw_hash": "",
+  "quality_label": "Hi-Res 24-Bit / 96 kHz",
+  "update_interval": 3,
+  "show_quality_badge": true,
+  "fallback_cover": "",
+  "auto_connect": false,
+  "minimize_to_tray": false,
+  "start_with_windows": false
+}

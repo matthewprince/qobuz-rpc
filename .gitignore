@@ -1,0 +1,35 @@
+# user config (contains email, hashed password, discord app id)
+config.json
+
+# python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+*.spec
+*.exe
+
+# pyinstaller
+QobuzRPC.exe
+QobuzRPC-CLI.exe
+
+# venv
+venv/
+.venv/
+env/
+
+# ide
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# os
+Thumbs.db
+.DS_Store
+desktop.ini
+
+# startup script (auto-generated, contains local paths)
+QobuzRPC.vbs
