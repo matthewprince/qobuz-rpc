@@ -534,30 +534,39 @@ class App:
 
     # 1s tick for progress + stats
     def _tick(self):
-        now = time.time()
+        try:
+            now = time.time()
 
-        if self.playing and self.ltick > 0:
-            dt = now - self.ltick
-            if 0 < dt < 10: self.listen_s += dt
-        self.ltick = now if self.playing else 0
+            if self.playing and self.ltick > 0:
+                dt = now - self.ltick
+                if 0 < dt < 10: self.listen_s += dt
+            self.ltick = now if self.playing else 0
 
-        if self.tkey and self.tstart > 0 and self.playing:
-            el = now - self.tstart
-            ds = self.tdur / 1000.0
-            self.l_pos.config(text=fmt(el))
-            self.bar.delete("all"); self.bar.update_idletasks()
-            w = self.bar.winfo_width()
-            if ds > 0:
-                self.l_dur.config(text=fmt(ds))
-                self.bar.create_rectangle(0, 0, int(min(el/ds, 1)*w), 3, fill=BLUE, outline="")
-            else:
-                self.l_dur.config(text="")
-                self.bar.create_rectangle(0, 0, w, 3, fill=BLUE, outline="")
+            # only touch UI widgets if window is actually visible
+            visible = False
+            try: visible = self.root.winfo_viewable()
+            except: pass
 
-        if self.sess_start > 0:
-            self.s_sess.config(text=f"Session  {fmt(now - self.sess_start)}")
-            self.s_listen.config(text=f"Listened  {fmt(self.listen_s)}")
-            self.s_songs.config(text=f"{self.songs} song{'s' if self.songs != 1 else ''}")
+            if visible and self.tkey and self.tstart > 0 and self.playing:
+                el = now - self.tstart
+                ds = self.tdur / 1000.0
+                self.l_pos.config(text=fmt(el))
+                self.bar.delete("all")
+                w = self.bar.winfo_width()
+                if w > 1:
+                    if ds > 0:
+                        self.l_dur.config(text=fmt(ds))
+                        self.bar.create_rectangle(0, 0, int(min(el/ds, 1)*w), 3, fill=BLUE, outline="")
+                    else:
+                        self.l_dur.config(text="")
+                        self.bar.create_rectangle(0, 0, w, 3, fill=BLUE, outline="")
+
+            if visible and self.sess_start > 0:
+                self.s_sess.config(text=f"Session  {fmt(now - self.sess_start)}")
+                self.s_listen.config(text=f"Listened  {fmt(self.listen_s)}")
+                self.s_songs.config(text=f"{self.songs} song{'s' if self.songs != 1 else ''}")
+        except:
+            pass
 
         self.root.after(1000, self._tick)
 
