@@ -8,7 +8,10 @@ except ImportError: print("[!] pip install psutil"); sys.exit(1)
 try: import win32gui, win32process
 except ImportError: print("[!] pip install pywin32"); sys.exit(1)
 
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+if getattr(sys, 'frozen', False):
+    SCRIPT_DIR = os.path.dirname(sys.executable)
+else:
+    SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATH = os.path.join(SCRIPT_DIR, "config.json")
 
 DEFAULT_CFG = {
@@ -20,7 +23,9 @@ DEFAULT_CFG = {
 def load_cfg():
     if os.path.exists(CONFIG_PATH):
         with open(CONFIG_PATH) as f: return {**DEFAULT_CFG, **json.load(f)}
-    return dict(DEFAULT_CFG)
+    cfg = dict(DEFAULT_CFG)
+    save_cfg(cfg)
+    return cfg
 
 def save_cfg(c):
     with open(CONFIG_PATH, "w") as f: json.dump(c, f, indent=2)

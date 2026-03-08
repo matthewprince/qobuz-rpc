@@ -20,7 +20,12 @@ try:
 except ImportError:
     HAS_TRAY = False
 
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+# figure out where we actually live (handles PyInstaller temp dir)
+if getattr(sys, 'frozen', False):
+    SCRIPT_DIR = os.path.dirname(sys.executable)
+else:
+    SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+
 CONFIG_PATH = os.path.join(SCRIPT_DIR, "config.json")
 ICON_ICO = os.path.join(SCRIPT_DIR, "icon.ico")
 ICON_PNG = os.path.join(SCRIPT_DIR, "icon.png")
@@ -38,7 +43,14 @@ DEFAULT_CFG = {
 def load_cfg():
     if os.path.exists(CONFIG_PATH):
         with open(CONFIG_PATH) as f: return {**DEFAULT_CFG, **json.load(f)}
-    return dict(DEFAULT_CFG)
+    # first run - create config.json from example or defaults
+    example = os.path.join(SCRIPT_DIR, "config.example.json")
+    if os.path.exists(example):
+        with open(example) as f: cfg = {**DEFAULT_CFG, **json.load(f)}
+    else:
+        cfg = dict(DEFAULT_CFG)
+    save_cfg(cfg)
+    return cfg
 
 def save_cfg(c):
     with open(CONFIG_PATH, "w") as f: json.dump(c, f, indent=2)
@@ -47,8 +59,14 @@ def set_autostart(on):
     try:
         if on:
             os.makedirs(STARTUP_DIR, exist_ok=True)
-            with open(STARTUP_VBS, "w") as f:
-                f.write(f'Set s = CreateObject("WScript.Shell")\ns.Run "pythonw ""{os.path.abspath(__file__)}""", 0, False')
+            if getattr(sys, 'frozen', False):
+                # EXE mode - just run the exe
+                exe = os.path.abspath(sys.executable)
+                vbs = f'Set s = CreateObject("WScript.Shell")\ns.Run """{exe}""", 0, False'
+            else:
+                script = os.path.abspath(__file__)
+                vbs = f'Set s = CreateObject("WScript.Shell")\ns.Run "pythonw ""{script}""", 0, False'
+            with open(STARTUP_VBS, "w") as f: f.write(vbs)
         elif os.path.exists(STARTUP_VBS):
             os.remove(STARTUP_VBS)
     except OSError:
@@ -477,6 +495,12 @@ class App:
         self.v_auto.set(self.cfg.get("auto_connect", False))
         self.v_tray.set(self.cfg.get("minimize_to_tray", False))
         self.v_startup.set(self.cfg.get("start_with_windows", False))
+        # show dots if password hash exists so user knows it's saved
+        if self.cfg.get("qobuz_pw_hash", ""):
+            self.v_pw.set("saved")
+            self._pw_is_placeholder = True
+        else:
+            self._pw_is_placeholder = False
 
     def _read_fields(self):
         self.cfg["discord_app_id"] = self.v_app.get().strip()
@@ -486,9 +510,11 @@ class App:
         self.cfg["minimize_to_tray"] = self.v_tray.get()
         self.cfg["start_with_windows"] = self.v_startup.get()
         pw = self.v_pw.get().strip()
-        if pw:
+        # only hash if user typed a new password (not the placeholder)
+        if pw and not (pw == "saved" and self._pw_is_placeholder):
             self.cfg["qobuz_pw_hash"] = hashlib.md5(pw.encode()).hexdigest()
-            self.v_pw.set("")
+            self.v_pw.set("saved")
+            self._pw_is_placeholder = True
 
     def _save(self, _e=None):
         self._read_fields()
