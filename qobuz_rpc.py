@@ -5,7 +5,7 @@ from datetime import datetime
 
 try: import requests
 except ImportError: print("[!] pip install requests"); sys.exit(1)
-try: from pypresence import Presence
+try: from pypresence import Presence, ActivityType, StatusDisplayType
 except ImportError: print("[!] pip install pypresence"); sys.exit(1)
 try: import psutil
 except ImportError: print("[!] pip install psutil"); sys.exit(1)
@@ -183,6 +183,13 @@ class QobuzAPI:
             if bd and sr:
                 ql = f"Hi-Res {int(bd)}-Bit / {sr:g} kHz" if bd >= 24 else f"CD {int(bd)}-Bit / {sr:g} kHz"
 
+            track_id = best.get("id")
+            album_id = alb.get("id")
+            artist_id = (best.get("performer") or {}).get("id") or (alb.get("artist") or {}).get("id")
+            track_url = f"https://play.qobuz.com/track/{track_id}" if track_id else ""
+            album_url = f"https://play.qobuz.com/album/{album_id}" if album_id else ""
+            artist_url = f"https://play.qobuz.com/artist/{artist_id}" if artist_id else ""
+
             return {
                 "title": best.get("title") or title,
                 "artist": (best.get("performer") or {}).get("name") or artist,
@@ -190,6 +197,7 @@ class QobuzAPI:
                 "cover": cover or None,
                 "duration_ms": int((best.get("duration") or 0) * 1000),
                 "quality": ql, "src": "Qobuz",
+                "track_url": track_url, "album_url": album_url, "artist_url": artist_url,
             }
         except:
             return None
@@ -321,6 +329,7 @@ class App:
         self.tqual = ""
         self.tdur = 0
         self.tstart = 0.0
+        self.turls = {}
         self.prev_raw = None
         self.playing = False
         self.qobuz_ok = False
@@ -546,15 +555,29 @@ class App:
 
     def _push_rpc(self, title, artist, album, cover, quality):
         if not self.rpc_ok: return
-        state = f"{artist} \u00b7 {quality}" if quality else artist
         kw = {
-            "details": title[:128], "state": state[:128],
+            "activity_type": ActivityType.LISTENING,
+            "status_display_type": StatusDisplayType.DETAILS,
+            "details": title[:128],
             "large_image": cover or self.cfg.get("fallback_cover") or "qobuz_icon",
-            "large_text": (album or "Qobuz")[:128],
         }
-        if self.tstart > 0: kw["start"] = int(self.tstart)
-        if self.cfg.get("show_quality_badge", True):
-            kw["small_image"] = "qobuz_icon"; kw["small_text"] = quality or "Qobuz"
+        if artist: kw["state"] = f"by {artist}"[:128]
+        if album: kw["large_text"] = album[:128]
+        if self.tdur and self.tstart > 0:
+            kw["start"] = int(self.tstart)
+            kw["end"] = int(self.tstart + self.tdur / 1000)
+        elif self.tstart > 0:
+            kw["start"] = int(self.tstart)
+        if self.cfg.get("show_quality_badge", True) and quality:
+            kw["small_image"] = "qobuz_icon"; kw["small_text"] = quality
+
+        btns = []
+        urls = self.turls or {}
+        if urls.get("track"): btns.append({"label": "Open Track", "url": urls["track"]})
+        if urls.get("album"): btns.append({"label": "Open Album", "url": urls["album"]})
+        elif urls.get("artist"): btns.append({"label": "Open Artist", "url": urls["artist"]})
+        if btns: kw["buttons"] = btns[:2]
+
         try: self.rpc.update(**kw)
         except Exception as e: self.log(f"RPC error: {e}"); self.rpc_ok = False
 
@@ -638,6 +661,11 @@ class App:
                                     self.talbum = meta.get("album", "")
                                     self.tqual = meta.get("quality", "")
                                     self.tdur = meta.get("duration_ms", 0)
+                                    self.turls = {
+                                        "track": meta.get("track_url", ""),
+                                        "album": meta.get("album_url", ""),
+                                        "artist": meta.get("artist_url", ""),
+                                    }
                                     src = meta.get("src", "")
                                     self.root.after(0, lambda s=src, q=self.tqual:
                                         self.log(f"[{s}] {q}" if q else f"[{s}] loaded"))
@@ -646,6 +674,7 @@ class App:
                                 else:
                                     self.tcover = None; self.talbum = ""
                                     self.tqual = self.cfg.get("quality_label", ""); self.tdur = 0
+                                    self.turls = {}
 
                                 self.root.after(0, lambda: self._set_np(p["title"], p["artist"], self.talbum, self.tqual))
 
