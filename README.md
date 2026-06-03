@@ -42,7 +42,7 @@ Copy `config.example.json` to `config.json`, or just run the app and it'll creat
 
 Run `start.bat` (GUI) or `python qobuz_rpc_cli.py --setup` (CLI).
 
-Enter your Discord Application ID, Qobuz email, and password. The password is MD5 hashed locally before it's written to `config.json`, so the plaintext is never stored. Note the hash is exactly what Qobuz authenticates against, so it's password-equivalent: keep `config.json` private (it's gitignored by default, never commit or share it).
+Enter your Discord Application ID, Qobuz email, and password. The password is MD5 hashed locally and stored in the **Windows Credential Manager** (not `config.json`). The hash is what Qobuz authenticates against, so keeping it out of plain files is deliberate; an existing hash from an older `config.json` is migrated into Credential Manager automatically on first run. (`config.json` is gitignored regardless.)
 
 Qobuz credentials are optional. Without them the app falls back to iTunes for metadata (no per-track quality detection).
 
@@ -62,13 +62,14 @@ Outputs `dist/QobuzRPC.exe` (GUI) and `dist/QobuzRPC-CLI.exe` (console). Require
 
 ## Options
 
+- **Use Windows media session (SMTC)** - read Qobuz's media session for exact metadata and real position; falls back to the window title when off or unavailable
 - **Auto-connect on launch** - connects automatically when the app starts
 - **Minimize to tray on close** - hides to system tray instead of quitting
 - **Start with Windows** - creates a startup script in your Startup folder
 
 ## How it works
 
-The app reads the Qobuz desktop window title which shows "Track - Artist" during playback. It then searches the Qobuz API (`/track/search`) for that track to get the real `maximum_bit_depth` and `maximum_sampling_rate` from the catalog. Album art comes from the Qobuz CDN. If the Qobuz API fails for any reason, it falls back to the iTunes Search API.
+By default the app reads the Windows media session (SMTC) that Qobuz publishes, which gives the exact track title, artist, album, real playback position, and play/pause state. If that's unavailable (Qobuz not reporting to SMTC, or `winrt` not installed) it falls back to reading the Qobuz desktop window title ("Track - Artist"). Either way it then searches the Qobuz API (`/track/search`) for that track to get the real `maximum_bit_depth` and `maximum_sampling_rate` from the catalog, plus album art from the Qobuz CDN. If the Qobuz API fails, it falls back to the iTunes Search API. You can turn the media-session source off in Settings to force the window-title method.
 
 API credentials (`app_id` and `app_secret`) are extracted dynamically from the Qobuz web player's `bundle.js`, same method used by [QobuzApiSharp](https://github.com/DJDoubleD/QobuzApiSharp).
 

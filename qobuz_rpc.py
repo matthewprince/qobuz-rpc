@@ -11,6 +11,8 @@ try: import psutil
 except ImportError: print("[!] pip install psutil"); sys.exit(1)
 try: import win32gui, win32process
 except ImportError: print("[!] pip install pywin32"); sys.exit(1)
+try: import win32cred
+except Exception: win32cred = None
 try: from PIL import Image, ImageTk, ImageDraw
 except ImportError: print("[!] pip install Pillow"); sys.exit(1)
 
@@ -19,6 +21,13 @@ try:
     HAS_TRAY = True
 except ImportError:
     HAS_TRAY = False
+
+import asyncio
+try:
+    from winrt.windows.media.control import GlobalSystemMediaTransportControlsSessionManager as _SMTCMgr
+    HAS_SMTC = True
+except Exception:
+    HAS_SMTC = False
 
 # figure out where we actually live (handles PyInstaller temp dir)
 if getattr(sys, 'frozen', False):
@@ -38,6 +47,7 @@ DEFAULT_CFG = {
     "quality_label": "Hi-Res 24-Bit / 96 kHz", "update_interval": 3,
     "show_quality_badge": True, "fallback_cover": "",
     "auto_connect": False, "minimize_to_tray": False, "start_with_windows": False,
+    "use_smtc": True,
 }
 
 def load_cfg():
@@ -54,6 +64,40 @@ def load_cfg():
 
 def save_cfg(c):
     with open(CONFIG_PATH, "w") as f: json.dump(c, f, indent=2)
+
+
+# qobuz password hash lives in the windows credential manager, not config.json
+CRED_TARGET = "QobuzRPC"
+def cred_get():
+    if win32cred is None: return ""
+    try:
+        c = win32cred.CredRead(CRED_TARGET, win32cred.CRED_TYPE_GENERIC)
+        b = c.get("CredentialBlob") or b""
+        return b.decode("utf-16-le") if isinstance(b, (bytes, bytearray)) else str(b)
+    except Exception:
+        return ""
+
+def cred_set(h):
+    if win32cred is None or not h: return False
+    try:
+        win32cred.CredWrite({"Type": win32cred.CRED_TYPE_GENERIC, "TargetName": CRED_TARGET,
+            "UserName": "qobuz", "CredentialBlob": h, "Persist": win32cred.CRED_PERSIST_LOCAL_MACHINE}, 0)
+        return True
+    except Exception:
+        return False
+
+def get_pw_hash(cfg):
+    h = cred_get()
+    if h: return h
+    legacy = (cfg.get("qobuz_pw_hash") or "").strip()   # migrate an old hash from config.json
+    if legacy:
+        if cred_set(legacy): cfg["qobuz_pw_hash"] = ""; save_cfg(cfg)
+        return legacy
+    return ""
+
+def set_pw_hash(cfg, h):
+    if cred_set(h): cfg["qobuz_pw_hash"] = ""
+    else: cfg["qobuz_pw_hash"] = h
 
 def set_autostart(on):
     try:
@@ -255,6 +299,41 @@ def parse(t):
     return None
 
 
+# windows media session (SMTC) - exact title/artist/album + real position & play/pause
+# for the qobuz session. returns None when unavailable so the caller uses the scraper.
+
+_smtc_loop = None
+def _smtc_run(coro):
+    global _smtc_loop
+    if _smtc_loop is None: _smtc_loop = asyncio.new_event_loop()
+    return _smtc_loop.run_until_complete(coro)
+
+async def _smtc_read():
+    mgr = await _SMTCMgr.request_async()
+    sess = None
+    for s in mgr.get_sessions():
+        if "qobuz" in (s.source_app_user_model_id or "").lower(): sess = s; break
+    if sess is None: return None
+    status = int(sess.get_playback_info().playback_status)   # 4 = playing, 5 = paused
+    if status not in (4, 5): return None
+    props = await sess.try_get_media_properties_async()
+    title = (props.title or "").strip()
+    if not title: return None
+    tl = sess.get_timeline_properties()
+    pos = tl.position.total_seconds() if tl.position else 0.0
+    dur = tl.end_time.total_seconds() if tl.end_time else 0.0
+    if status == 4 and tl.last_updated_time:   # nudge a stale position up to wall-clock
+        pos += max(0.0, time.time() - tl.last_updated_time.timestamp())
+    if dur > 0: pos = min(pos, dur)
+    return {"status": "playing" if status == 4 else "paused", "title": title,
+        "artist": props.artist or "", "album": props.album_title or "", "pos": pos, "dur": dur}
+
+def smtc_now():
+    if not HAS_SMTC: return None
+    try: return _smtc_run(_smtc_read())
+    except: return None
+
+
 # misc helpers
 
 def fmt(s):
@@ -266,6 +345,42 @@ def quality_str(bd, sr):
     if sr > 1000: sr /= 1000
     if not (bd and sr): return ""
     return f"{'Hi-Res' if bd >= 24 else 'CD'} {int(bd)}-Bit / {sr:g} kHz"
+
+def decide(st, sample, now):
+    # pure state machine, shared by the scraper and SMTC sources, so it can be tested.
+    # st keys: tkey, tstart, tdur, playing, pause_pos, prev_status
+    # sample: {status,title,artist,album,pos,dur} or None (nothing playing / source gone)
+    # returns (event, new_st); event in: gone, pause, new, resume, seek, loop, tick, None
+    st = dict(st)
+    if sample is None:
+        ev = "gone" if (st["playing"] or st["tkey"]) else None
+        st["playing"] = False; st["prev_status"] = "gone"
+        return ev, st
+    if sample["status"] == "paused":
+        ev = "pause" if st["playing"] else None
+        pos = sample.get("pos")
+        pp = pos if pos is not None else (now - st["tstart"] if st["tstart"] > 0 else 0.0)
+        st["playing"] = False; st["tstart"] = 0.0
+        st["pause_pos"] = max(0.0, pp); st["prev_status"] = "paused"
+        return ev, st
+    k = f"{sample['title']}|{sample['artist']}"
+    pos = sample.get("pos")
+    was = st["prev_status"]
+    st["playing"] = True; st["prev_status"] = "playing"
+    if k != st["tkey"]:
+        st["tkey"] = k; st["tstart"] = now - (pos or 0.0)
+        return "new", st
+    if was == "paused":
+        st["tstart"] = now - (pos if pos is not None else st["pause_pos"])
+        return "resume", st
+    if pos is not None:
+        nt = now - pos
+        if abs(nt - st["tstart"]) > 2: st["tstart"] = nt; return "seek", st
+        return "tick", st
+    if st["tdur"] > 0 and st["tstart"] > 0 and now - st["tstart"] > st["tdur"]/1000 + 5:
+        st["tstart"] = now
+        return "loop", st
+    return "tick", st
 
 def mk_rounded(data, sz, r):
     img = Image.open(io.BytesIO(data)).resize((sz, sz), Image.LANCZOS)
@@ -319,7 +434,7 @@ class App:
         self.tdur = 0
         self.tstart = 0.0
         self.turls = {}
-        self.prev_raw = None
+        self.prev_status = None
         self.playing = False
         self.qobuz_ok = False
         self.pause_pos = 0.0   # how far into the track we were when paused
@@ -452,7 +567,8 @@ class App:
         self.v_auto = tk.BooleanVar()
         self.v_tray = tk.BooleanVar()
         self.v_startup = tk.BooleanVar()
-        for v, txt in [(self.v_auto, "Auto-connect on launch"), (self.v_tray, "Minimize to tray on close"), (self.v_startup, "Start with Windows")]:
+        self.v_smtc = tk.BooleanVar()
+        for v, txt in [(self.v_auto, "Auto-connect on launch"), (self.v_tray, "Minimize to tray on close"), (self.v_startup, "Start with Windows"), (self.v_smtc, "Use Windows media session (SMTC)")]:
             tk.Checkbutton(ckf, text=txt, variable=v, font=("Segoe UI", 9), fg=DIM, bg=BG,
                 selectcolor=CARD2, activebackground=BG, activeforeground=DIM).pack(anchor="w")
 
@@ -499,8 +615,9 @@ class App:
         self.v_auto.set(self.cfg.get("auto_connect", False))
         self.v_tray.set(self.cfg.get("minimize_to_tray", False))
         self.v_startup.set(self.cfg.get("start_with_windows", False))
+        self.v_smtc.set(self.cfg.get("use_smtc", True))
         # show dots if password hash exists so user knows it's saved
-        if self.cfg.get("qobuz_pw_hash", ""):
+        if get_pw_hash(self.cfg):
             self.v_pw.set("saved")
             self._pw_is_placeholder = True
         else:
@@ -515,10 +632,11 @@ class App:
         self.cfg["auto_connect"] = self.v_auto.get()
         self.cfg["minimize_to_tray"] = self.v_tray.get()
         self.cfg["start_with_windows"] = self.v_startup.get()
+        self.cfg["use_smtc"] = self.v_smtc.get()
         pw = self.v_pw.get().strip()
         # only hash if user typed a new password (not the placeholder)
         if pw and not (pw == "saved" and self._pw_is_placeholder):
-            self.cfg["qobuz_pw_hash"] = hashlib.md5(pw.encode()).hexdigest()
+            set_pw_hash(self.cfg, hashlib.md5(pw.encode()).hexdigest())
             self.v_pw.set("saved")
             self._pw_is_placeholder = True
 
@@ -632,79 +750,34 @@ class App:
     def _monitor(self):
         while self.monitoring:
             try:
-                raw = qobuz_title()
+                now = time.time()
+                sample = self._sample()
+                st = {"tkey": self.tkey, "tstart": self.tstart, "tdur": self.tdur,
+                    "playing": self.playing, "pause_pos": self.pause_pos, "prev_status": self.prev_status}
+                ev, st = decide(st, sample, now)
+                self.tkey = st["tkey"]; self.tstart = st["tstart"]
+                self.playing = st["playing"]; self.pause_pos = st["pause_pos"]
+                self.prev_status = st["prev_status"]
 
-                if raw is None:
-                    if self.playing or self.tkey:
-                        self.root.after(0, lambda: self.log("Qobuz not detected"))
-                        self._reset(); self.root.after(0, self._clear_np)
+                if ev == "gone":
+                    self.root.after(0, lambda: self.log("Qobuz not detected"))
+                    self._reset(); self.root.after(0, self._clear_np); self._rpc_clear()
+                elif ev == "pause":
+                    self.root.after(0, lambda: self.log("Paused"))
+                    self.root.after(0, lambda: self.np.config(text="PAUSED", fg=AMBER))
                     self._rpc_clear()
+                elif ev == "new":
+                    self.songs += 1
+                    self._load_track(sample)
+                elif ev == "loop":
+                    self.songs += 1
+                    self.root.after(0, lambda: self.log("Looped"))
+                elif ev == "resume":
+                    self.root.after(0, lambda: self.log("Resumed"))
+                    self.root.after(0, lambda: self.np.config(text="NOW PLAYING", fg=GREEN))
 
-                else:
-                    p = parse(raw)
-                    if p:
-                        k = f"{p['title']}|{p['artist']}"
-                        self.playing = True
-
-                        looped = k == self.tkey and self.tdur > 0 and self.tstart > 0 and time.time() - self.tstart > self.tdur/1000 + 5
-                        resumed = self.prev_raw and not parse(self.prev_raw) and k == self.tkey
-                        new = k != self.tkey
-
-                        if new or looped:
-                            self.tstart = time.time()
-                            self.songs += 1
-
-                            if new:
-                                self.tkey = k
-                                t, a = p["title"], p["artist"]
-                                self.root.after(0, lambda tt=t, ta=a: self.log(f"Playing: {tt}  {ta}"))
-
-                                meta = None
-                                if self.qobuz_ok: meta = self.qobuz.search(t, a)
-                                if not meta: meta = itunes_lookup(a, t)
-
-                                if meta:
-                                    self.tcover = meta.get("cover")
-                                    self.talbum = meta.get("album", "")
-                                    self.tqual = meta.get("quality", "")
-                                    self.tdur = meta.get("duration_ms", 0)
-                                    self.turls = {
-                                        "track": meta.get("track_url", ""),
-                                        "album": meta.get("album_url", ""),
-                                        "artist": meta.get("artist_url", ""),
-                                    }
-                                    src = meta.get("src", "")
-                                    self.root.after(0, lambda s=src, q=self.tqual:
-                                        self.log(f"[{s}] {q}" if q else f"[{s}] loaded"))
-                                    if self.tcover:
-                                        threading.Thread(target=self._fetch_cover, args=(self.tcover,), daemon=True).start()
-                                else:
-                                    self.tcover = None; self.talbum = ""
-                                    self.tqual = self.cfg.get("quality_label", ""); self.tdur = 0
-                                    self.turls = {}
-
-                                self.root.after(0, lambda: self._set_np(p["title"], p["artist"], self.talbum, self.tqual))
-
-                            else:
-                                self.root.after(0, lambda: self.log("Looped"))
-
-                        elif resumed:
-                            # back from pause - keep our place instead of restarting
-                            self.tstart = time.time() - self.pause_pos
-                            self.root.after(0, lambda: self.log("Resumed"))
-                            self.root.after(0, lambda: self.np.config(text="NOW PLAYING", fg=GREEN))
-
-                        self._push_rpc(p["title"], p["artist"], self.talbum or "", self.tcover, self.tqual)
-
-                    else:
-                        if self.playing:
-                            self.root.after(0, lambda: self.log("Paused"))
-                            self.pause_pos = max(0.0, time.time() - self.tstart) if self.tstart > 0 else 0.0
-                            self.playing = False; self.tstart = 0
-                            self.root.after(0, lambda: self.np.config(text="PAUSED", fg=AMBER))
-                        self._rpc_clear()
-
-                    self.prev_raw = raw
+                if sample and sample["status"] == "playing":
+                    self._push_rpc(sample["title"], sample["artist"], self.talbum or "", self.tcover, self.tqual)
 
             except Exception as e:
                 self.root.after(0, lambda err=e: self.log(f"Error: {err}"))
@@ -713,8 +786,44 @@ class App:
             time.sleep(self.cfg.get("update_interval", 3))
 
     def _reset(self):
-        self.tkey = self.tcover = self.talbum = self.prev_raw = None
+        self.tkey = self.tcover = self.talbum = None
         self.tqual = ""; self.tdur = 0; self.tstart = 0; self.playing = False
+        self.pause_pos = 0.0; self.prev_status = None
+
+    def _sample(self):
+        # unified now-playing: prefer SMTC (exact + real position), else the window title
+        if self.cfg.get("use_smtc", True):
+            s = smtc_now()
+            if s is not None: return s
+        raw = qobuz_title()
+        if raw is None: return None
+        p = parse(raw)
+        if p: return {"status": "playing", "title": p["title"], "artist": p["artist"],
+            "album": None, "pos": None, "dur": None}
+        return {"status": "paused", "title": "", "artist": "", "album": None, "pos": None, "dur": None}
+
+    def _load_track(self, sample):
+        t, a = sample["title"], sample["artist"]
+        self.root.after(0, lambda: self.log(f"Playing: {t}  {a}"))
+        meta = None
+        if self.qobuz_ok: meta = self.qobuz.search(t, a)
+        if not meta: meta = itunes_lookup(a, t)
+        if meta:
+            self.tcover = meta.get("cover")
+            self.talbum = meta.get("album", "") or (sample.get("album") or "")
+            self.tqual = meta.get("quality", "")
+            self.tdur = meta.get("duration_ms", 0)
+            self.turls = {"track": meta.get("track_url", ""), "album": meta.get("album_url", ""),
+                "artist": meta.get("artist_url", "")}
+            src = meta.get("src", "")
+            self.root.after(0, lambda s=src, q=self.tqual: self.log(f"[{s}] {q}" if q else f"[{s}] loaded"))
+            if self.tcover:
+                threading.Thread(target=self._fetch_cover, args=(self.tcover,), daemon=True).start()
+        else:
+            self.tcover = None; self.talbum = sample.get("album") or ""
+            self.tqual = self.cfg.get("quality_label", ""); self.tdur = 0; self.turls = {}
+        if not self.tdur and sample.get("dur"): self.tdur = int(sample["dur"] * 1000)
+        self.root.after(0, lambda: self._set_np(t, a, self.talbum, self.tqual))
 
     # ui updates
     def _set_np(self, title, artist, album, quality):
@@ -757,7 +866,7 @@ class App:
         self.log("Starting...")
 
         email = self.cfg.get("qobuz_email", "").strip()
-        pw = self.cfg.get("qobuz_pw_hash", "").strip()
+        pw = get_pw_hash(self.cfg)
         if email and pw:
             self.log("Initializing Qobuz API...")
             if self.qobuz.init(log=self.log):
