@@ -1,4 +1,4 @@
-import base64, hashlib, json, re, signal, sys, os, time
+import hashlib, json, re, signal, sys, os, time
 try: import requests
 except ImportError: print("[!] pip install requests"); sys.exit(1)
 try: from pypresence import Presence
@@ -36,7 +36,7 @@ class QobuzAPI:
     WEB = "https://play.qobuz.com"
 
     def __init__(self):
-        self.app_id = None; self.app_secret = None; self.user_auth_token = None
+        self.app_id = None; self.user_auth_token = None
         self.s = requests.Session()
         self.s.headers["User-Agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/110.0"
         self._bun = None
@@ -56,16 +56,6 @@ class QobuzAPI:
             self.app_id = m2.group(1)
             self.s.headers["X-App-Id"] = self.app_id
             log(f"[+] App ID: {self.app_id}")
-
-            sm = re.search(r'\):[a-z]\.initialSeed\("([^"]+)",window\.utimezone\.([a-z]+)\)', self._bun)
-            if sm:
-                seed, tz = sm.group(1), sm.group(2)
-                im = re.search(r'timezones:\[.*?name:".*?/' + tz[0].upper()+tz[1:] + r'",info:"([^"]*)",extras:"([^"]*)"', self._bun)
-                if im:
-                    enc = seed + im.group(1) + im.group(2)
-                    if len(enc) > 44:
-                        try: self.app_secret = base64.b64decode(enc[:-44]).decode("utf-8"); log("[+] App secret extracted")
-                        except: pass
             return True
         except Exception as e:
             log(f"[!] Init failed: {e}"); return False
@@ -103,10 +93,7 @@ class QobuzAPI:
             cover = img.get("mega") or img.get("extralarge") or img.get("large") or img.get("small") or ""
             if cover and not cover.startswith("http"):
                 cover = f"https:{cover}" if cover.startswith("//") else ""
-            bd = best.get("maximum_bit_depth") or 0; sr = best.get("maximum_sampling_rate") or 0
-            if sr > 1000: sr /= 1000
-            ql = ""
-            if bd and sr: ql = f"Hi-Res {int(bd)}-Bit / {sr:g} kHz" if bd >= 24 else f"CD {int(bd)}-Bit / {sr:g} kHz"
+            ql = quality_str(best.get("maximum_bit_depth"), best.get("maximum_sampling_rate"))
             return {"title": best.get("title") or title, "artist": (best.get("performer") or {}).get("name") or artist,
                 "album": alb.get("title") or "", "cover": cover or None,
                 "duration_ms": int((best.get("duration") or 0) * 1000), "quality": ql, "src": "Qobuz"}
@@ -117,6 +104,7 @@ _it = {}
 def itunes(artist, track):
     k = f"{artist}||{track}".lower()
     if k in _it: return _it[k]
+    if len(_it) > 200: _it.pop(next(iter(_it)))
     try:
         r = requests.get("https://itunes.apple.com/search",
             params={"term": f"{artist} {track}", "entity": "song", "limit": "5"}, timeout=6)
@@ -156,13 +144,19 @@ def get_title():
 def parse(t):
     if not t or t.strip().lower() == "qobuz": return None
     p = t.split(" - ", 1)
-    if len(p) == 2: return {"title": p[0].strip(), "artist": p[1].strip()}
-    if p[0].strip().lower() != "qobuz": return {"title": p[0].strip(), "artist": "Unknown Artist"}
+    if len(p) == 2 and p[0].strip() and p[1].strip():
+        return {"title": p[0].strip(), "artist": p[1].strip()}
     return None
 
 def fmt(s):
     m, s = divmod(int(max(0, s)), 60); h, m = divmod(m, 60)
     return f"{h}:{m:02d}:{s:02d}" if h else f"{m}:{s:02d}"
+
+def quality_str(bd, sr):
+    bd = bd or 0; sr = sr or 0
+    if sr > 1000: sr /= 1000
+    if not (bd and sr): return ""
+    return f"{'Hi-Res' if bd >= 24 else 'CD'} {int(bd)}-Bit / {sr:g} kHz"
 
 
 def setup():
@@ -208,7 +202,7 @@ def main():
     except Exception as e: print(f"[!] {e}"); sys.exit(1)
 
     tkey = None; tcover = None; talbum = None; tqual = ""; tdur = 0
-    tstart = 0.0; prev = None; playing = False
+    tstart = 0.0; prev = None; playing = False; pause_pos = 0.0; last_sig = None
     songs = 0; listen_s = 0.0; ltick = 0.0; t0 = time.time()
     iv = cfg.get("update_interval", 3)
 
@@ -227,17 +221,18 @@ def main():
                 if playing or tkey:
                     print(f"  [{time.strftime('%H:%M:%S')}] Qobuz gone")
                     tkey = tcover = talbum = prev = None; tqual = ""; tdur = 0; tstart = 0; playing = False
+                last_sig = None
                 try: rpc.clear()
                 except: pass
             else:
                 p = parse(raw)
                 if p:
                     k = f"{p['title']}|{p['artist']}"; playing = True
-                    flick = prev and not parse(prev) and k == tkey
                     looped = k == tkey and tdur > 0 and tstart > 0 and now - tstart > tdur/1000 + 5
+                    resumed = prev and not parse(prev) and k == tkey
                     new = k != tkey
 
-                    if new or flick or looped:
+                    if new or looped:
                         tstart = now; songs += 1
                         if new:
                             tkey = k
@@ -251,8 +246,10 @@ def main():
                                 print(f"             [{meta.get('src','')}] {talbum}{extra}")
                             else:
                                 tcover = None; talbum = ""; tqual = cfg.get("quality_label",""); tdur = 0
-                        elif flick: print(f"  [{time.strftime('%H:%M:%S')}] Restarted")
-                        elif looped: print(f"  [{time.strftime('%H:%M:%S')}] Looped")
+                        else: print(f"  [{time.strftime('%H:%M:%S')}] Looped")
+                    elif resumed:
+                        tstart = now - pause_pos
+                        print(f"  [{time.strftime('%H:%M:%S')}] Resumed")
 
                     state = f"{p['artist']} \u00b7 {tqual}" if tqual else p["artist"]
                     kw = {"details": p["title"][:128], "state": state[:128],
@@ -261,12 +258,16 @@ def main():
                     if tstart > 0: kw["start"] = int(tstart)
                     if cfg.get("show_quality_badge", True):
                         kw["small_image"] = "qobuz_icon"; kw["small_text"] = tqual or "Qobuz"
-                    try: rpc.update(**kw)
-                    except: pass
+                    sig = (p["title"], state, tcover, talbum, kw.get("start"))
+                    if sig != last_sig:
+                        try: rpc.update(**kw); last_sig = sig
+                        except: pass
                 else:
                     if playing:
                         print(f"  [{time.strftime('%H:%M:%S')}] Paused")
+                        pause_pos = max(0.0, now - tstart) if tstart > 0 else 0.0
                         playing = False; tstart = 0
+                    last_sig = None
                     try: rpc.clear()
                     except: pass
                 prev = raw

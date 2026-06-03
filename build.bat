@@ -23,7 +23,7 @@ python -m PyInstaller --noconfirm --onefile --windowed ^
     --icon "icon.ico" ^
     --add-data "icon.ico;." ^
     --add-data "icon.png;." ^
-    --add-data "config.json;." ^
+    --add-data "config.example.json;." ^
     --hidden-import "pystray._win32" ^
     qobuz_rpc.py
 

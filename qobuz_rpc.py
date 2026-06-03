@@ -1,4 +1,4 @@
-import base64, hashlib, json, re, threading, time, sys, os, io
+import hashlib, json, re, threading, time, sys, os, io
 import tkinter as tk
 from tkinter import ttk, messagebox
 from datetime import datetime
@@ -64,8 +64,11 @@ def set_autostart(on):
                 exe = os.path.abspath(sys.executable)
                 vbs = f'Set s = CreateObject("WScript.Shell")\ns.Run """{exe}""", 0, False'
             else:
+                # derive pythonw.exe next to this python so autostart works off-PATH
+                pyw = os.path.join(os.path.dirname(sys.executable), "pythonw.exe")
+                if not os.path.exists(pyw): pyw = "pythonw"
                 script = os.path.abspath(__file__)
-                vbs = f'Set s = CreateObject("WScript.Shell")\ns.Run "pythonw ""{script}""", 0, False'
+                vbs = f'Set s = CreateObject("WScript.Shell")\ns.Run """{pyw}"" ""{script}""", 0, False'
             with open(STARTUP_VBS, "w") as f: f.write(vbs)
         elif os.path.exists(STARTUP_VBS):
             os.remove(STARTUP_VBS)
@@ -81,7 +84,6 @@ class QobuzAPI:
 
     def __init__(self):
         self.app_id = None
-        self.app_secret = None
         self.user_auth_token = None
         self.s = requests.Session()
         self.s.headers["User-Agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/110.0"
@@ -110,21 +112,6 @@ class QobuzAPI:
             self.app_id = m2.group(1)
             self.s.headers["X-App-Id"] = self.app_id
             log(f"App ID: {self.app_id}")
-
-            # app secret - seed + timezone + info/extras -> base64
-            sm = re.search(r'\):[a-z]\.initialSeed\("([^"]+)",window\.utimezone\.([a-z]+)\)', self._bun)
-            if sm:
-                seed, tz = sm.group(1), sm.group(2)
-                tz_cap = tz[0].upper() + tz[1:]
-                im = re.search(r'timezones:\[.*?name:".*?/' + tz_cap + r'",info:"([^"]*)",extras:"([^"]*)"', self._bun)
-                if im:
-                    enc = seed + im.group(1) + im.group(2)
-                    if len(enc) > 44:
-                        try:
-                            self.app_secret = base64.b64decode(enc[:-44]).decode("utf-8")
-                            log("App secret extracted")
-                        except: pass
-
             return True
         except Exception as e:
             log(f"Init failed: {e}")
@@ -175,13 +162,7 @@ class QobuzAPI:
             if cover and not cover.startswith("http"):
                 cover = f"https:{cover}" if cover.startswith("//") else ""
 
-            bd = best.get("maximum_bit_depth") or 0
-            sr = best.get("maximum_sampling_rate") or 0
-            if sr > 1000: sr /= 1000
-
-            ql = ""
-            if bd and sr:
-                ql = f"Hi-Res {int(bd)}-Bit / {sr:g} kHz" if bd >= 24 else f"CD {int(bd)}-Bit / {sr:g} kHz"
+            ql = quality_str(best.get("maximum_bit_depth"), best.get("maximum_sampling_rate"))
 
             track_id = best.get("id")
             album_id = alb.get("id")
@@ -209,6 +190,7 @@ _it_cache = {}
 def itunes_lookup(artist, track):
     k = f"{artist}||{track}".lower()
     if k in _it_cache: return _it_cache[k]
+    if len(_it_cache) > 200: _it_cache.pop(next(iter(_it_cache)))
     try:
         r = requests.get("https://itunes.apple.com/search",
             params={"term": f"{artist} {track}", "entity": "song", "limit": "5"}, timeout=6)
@@ -234,6 +216,7 @@ _img_cache = {}
 def get_img(url):
     if not url: return None
     if url in _img_cache: return _img_cache[url]
+    if len(_img_cache) > 128: _img_cache.pop(next(iter(_img_cache)))
     try:
         r = requests.get(url, timeout=8); r.raise_for_status()
         _img_cache[url] = r.content; return r.content
@@ -277,6 +260,12 @@ def parse(t):
 def fmt(s):
     m, s = divmod(int(max(0, s)), 60); h, m = divmod(m, 60)
     return f"{h}:{m:02d}:{s:02d}" if h else f"{m}:{s:02d}"
+
+def quality_str(bd, sr):
+    bd = bd or 0; sr = sr or 0
+    if sr > 1000: sr /= 1000
+    if not (bd and sr): return ""
+    return f"{'Hi-Res' if bd >= 24 else 'CD'} {int(bd)}-Bit / {sr:g} kHz"
 
 def mk_rounded(data, sz, r):
     img = Image.open(io.BytesIO(data)).resize((sz, sz), Image.LANCZOS)
@@ -333,6 +322,8 @@ class App:
         self.prev_raw = None
         self.playing = False
         self.qobuz_ok = False
+        self.pause_pos = 0.0   # how far into the track we were when paused
+        self._last_sig = None  # last payload pushed to discord, to skip dupes
 
         # stats
         self.sess_start = 0.0
@@ -453,6 +444,9 @@ class App:
             "CD 16-Bit / 44.1 kHz", "MP3 320 kbps",
         ], font=("Segoe UI", 9)).pack(fill="x", pady=(0,10), ipady=3)
 
+        self.v_iv = tk.StringVar()
+        self._mkfield(sf, "Update Interval (seconds)", self.v_iv)
+
         # checkboxes
         ckf = tk.Frame(sf, bg=BG); ckf.pack(fill="x", pady=(2,10))
         self.v_auto = tk.BooleanVar()
@@ -501,6 +495,7 @@ class App:
         self.v_app.set(self.cfg.get("discord_app_id", ""))
         self.v_email.set(self.cfg.get("qobuz_email", ""))
         self.v_ql.set(self.cfg.get("quality_label", "Hi-Res 24-Bit / 96 kHz"))
+        self.v_iv.set(str(self.cfg.get("update_interval", 3)))
         self.v_auto.set(self.cfg.get("auto_connect", False))
         self.v_tray.set(self.cfg.get("minimize_to_tray", False))
         self.v_startup.set(self.cfg.get("start_with_windows", False))
@@ -515,6 +510,8 @@ class App:
         self.cfg["discord_app_id"] = self.v_app.get().strip()
         self.cfg["qobuz_email"] = self.v_email.get().strip()
         self.cfg["quality_label"] = self.v_ql.get().strip()
+        try: self.cfg["update_interval"] = max(1, int(float(self.v_iv.get().strip() or 3)))
+        except: pass
         self.cfg["auto_connect"] = self.v_auto.get()
         self.cfg["minimize_to_tray"] = self.v_tray.get()
         self.cfg["start_with_windows"] = self.v_startup.get()
@@ -551,7 +548,14 @@ class App:
         if self.rpc and self.rpc_ok:
             try: self.rpc.clear(); self.rpc.close()
             except: pass
-        self.rpc_ok = False
+        self.rpc_ok = False; self._last_sig = None
+
+    def _rpc_clear(self):
+        # drop the presence and forget the last payload so a resume re-pushes
+        self._last_sig = None
+        try:
+            if self.rpc and self.rpc_ok: self.rpc.clear()
+        except: pass
 
     def _push_rpc(self, title, artist, album, cover, quality):
         if not self.rpc_ok: return
@@ -578,7 +582,12 @@ class App:
         elif urls.get("artist"): btns.append({"label": "Open Artist", "url": urls["artist"]})
         if btns: kw["buttons"] = btns[:2]
 
-        try: self.rpc.update(**kw)
+        # discord animates the timer from start/end on its own, so only push on a real change
+        sig = (title, artist, album, cover, quality, kw.get("start"), kw.get("end"),
+            tuple(b["url"] for b in btns))
+        if sig == self._last_sig: return
+
+        try: self.rpc.update(**kw); self._last_sig = sig
         except Exception as e: self.log(f"RPC error: {e}"); self.rpc_ok = False
 
     # 1s tick for progress + stats
@@ -629,9 +638,7 @@ class App:
                     if self.playing or self.tkey:
                         self.root.after(0, lambda: self.log("Qobuz not detected"))
                         self._reset(); self.root.after(0, self._clear_np)
-                    try:
-                        if self.rpc and self.rpc_ok: self.rpc.clear()
-                    except: pass
+                    self._rpc_clear()
 
                 else:
                     p = parse(raw)
@@ -639,11 +646,11 @@ class App:
                         k = f"{p['title']}|{p['artist']}"
                         self.playing = True
 
-                        flick = self.prev_raw and not parse(self.prev_raw) and k == self.tkey
                         looped = k == self.tkey and self.tdur > 0 and self.tstart > 0 and time.time() - self.tstart > self.tdur/1000 + 5
+                        resumed = self.prev_raw and not parse(self.prev_raw) and k == self.tkey
                         new = k != self.tkey
 
-                        if new or flick or looped:
+                        if new or looped:
                             self.tstart = time.time()
                             self.songs += 1
 
@@ -678,21 +685,24 @@ class App:
 
                                 self.root.after(0, lambda: self._set_np(p["title"], p["artist"], self.talbum, self.tqual))
 
-                            elif flick:
-                                self.root.after(0, lambda: self.log("Restarted"))
-                            elif looped:
+                            else:
                                 self.root.after(0, lambda: self.log("Looped"))
+
+                        elif resumed:
+                            # back from pause - keep our place instead of restarting
+                            self.tstart = time.time() - self.pause_pos
+                            self.root.after(0, lambda: self.log("Resumed"))
+                            self.root.after(0, lambda: self.np.config(text="NOW PLAYING", fg=GREEN))
 
                         self._push_rpc(p["title"], p["artist"], self.talbum or "", self.tcover, self.tqual)
 
                     else:
                         if self.playing:
                             self.root.after(0, lambda: self.log("Paused"))
+                            self.pause_pos = max(0.0, time.time() - self.tstart) if self.tstart > 0 else 0.0
                             self.playing = False; self.tstart = 0
                             self.root.after(0, lambda: self.np.config(text="PAUSED", fg=AMBER))
-                        try:
-                            if self.rpc and self.rpc_ok: self.rpc.clear()
-                        except: pass
+                        self._rpc_clear()
 
                     self.prev_raw = raw
 

@@ -17,7 +17,7 @@ Quality is pulled from the Qobuz catalog per track, not a static setting. If you
 ## Requirements
 
 - Windows 10/11
-- Python 3.10+ (3.12 or 3.13 recommended)
+- Python 3.10+ (3.12 through 3.14 all work; every dependency ships prebuilt wheels)
 - Discord desktop app
 - Qobuz desktop app
 
@@ -42,7 +42,7 @@ Copy `config.example.json` to `config.json`, or just run the app and it'll creat
 
 Run `start.bat` (GUI) or `python qobuz_rpc_cli.py --setup` (CLI).
 
-Enter your Discord Application ID, Qobuz email, and password. Password is MD5 hashed locally on save and the plaintext is never stored.
+Enter your Discord Application ID, Qobuz email, and password. The password is MD5 hashed locally before it's written to `config.json`, so the plaintext is never stored. Note the hash is exactly what Qobuz authenticates against, so it's password-equivalent: keep `config.json` private (it's gitignored by default, never commit or share it).
 
 Qobuz credentials are optional. Without them the app falls back to iTunes for metadata (no per-track quality detection).
 
