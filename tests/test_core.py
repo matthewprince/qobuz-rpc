@@ -55,3 +55,68 @@ class TestQualityStr:
         assert m.quality_str(0, 0) == ""
         assert m.quality_str(None, None) == ""
         assert m.quality_str(24, 0) == ""
+
+
+def _idle():
+    return {"tkey": None, "tstart": 0.0, "tdur": 0, "playing": False, "pause_pos": 0.0, "prev_status": None}
+
+def _smp(status="playing", title="T", artist="A", album="Al", pos=None, dur=None):
+    return {"status": status, "title": title, "artist": artist, "album": album, "pos": pos, "dur": dur}
+
+
+@pytest.mark.parametrize("m", MODS)
+class TestDecide:
+    def test_idle_stays_quiet(self, m):
+        ev, st = m.decide(_idle(), None, 100.0)
+        assert ev is None and st["playing"] is False
+
+    def test_new_with_position(self, m):
+        ev, st = m.decide(_idle(), _smp(pos=30.0, dur=200.0), 1000.0)
+        assert ev == "new" and st["tkey"] == "T|A" and abs(st["tstart"] - 970.0) < 0.01
+
+    def test_new_without_position(self, m):
+        ev, st = m.decide(_idle(), _smp(pos=None), 1000.0)
+        assert ev == "new" and st["tstart"] == 1000.0
+
+    def test_same_track_is_stable_tick(self, m):
+        ev, st = m.decide(_idle(), _smp(pos=30.0, dur=200.0), 1000.0)
+        ev, st = m.decide(st, _smp(pos=33.0, dur=200.0), 1003.0)
+        assert ev == "tick" and abs(st["tstart"] - 970.0) < 0.01  # no drift -> debounce holds
+
+    def test_pause_captures_position(self, m):
+        ev, st = m.decide(_idle(), _smp(pos=30.0, dur=200.0), 1000.0)
+        ev, st = m.decide(st, _smp(status="paused", pos=33.0), 1004.0)
+        assert ev == "pause" and st["playing"] is False and abs(st["pause_pos"] - 33.0) < 0.01
+
+    def test_resume_with_position_excludes_pause_gap(self, m):
+        ev, st = m.decide(_idle(), _smp(pos=30.0, dur=200.0), 1000.0)
+        ev, st = m.decide(st, _smp(status="paused", pos=33.0), 1004.0)
+        ev, st = m.decide(st, _smp(pos=33.0, dur=200.0), 1010.0)
+        assert ev == "resume" and abs(st["tstart"] - 977.0) < 0.01
+
+    def test_resume_without_position_uses_pause_pos(self, m):
+        st = _idle(); st.update(tkey="T|A", tstart=950.0, playing=True, prev_status="playing")
+        ev, st = m.decide(st, _smp(status="paused", pos=None), 1000.0)
+        assert abs(st["pause_pos"] - 50.0) < 0.01
+        ev, st = m.decide(st, _smp(pos=None), 1100.0)
+        assert ev == "resume" and abs(st["tstart"] - 1050.0) < 0.01
+
+    def test_seek_jumps_tstart(self, m):
+        ev, st = m.decide(_idle(), _smp(pos=30.0, dur=200.0), 1000.0)
+        ev, st = m.decide(st, _smp(pos=120.0, dur=200.0), 1002.0)
+        assert ev == "seek" and abs(st["tstart"] - 882.0) < 0.01
+
+    def test_gone_after_playing(self, m):
+        ev, st = m.decide(_idle(), _smp(pos=None), 1000.0)
+        ev, st = m.decide(st, None, 1001.0)
+        assert ev == "gone" and st["playing"] is False
+
+    def test_loop_detected_without_position(self, m):
+        st = _idle(); st.update(tkey="T|A", tstart=1000.0, tdur=10000, playing=True, prev_status="playing")
+        ev, st = m.decide(st, _smp(pos=None), 1016.0)
+        assert ev == "loop" and st["tstart"] == 1016.0
+
+    def test_track_change_is_new(self, m):
+        ev, st = m.decide(_idle(), _smp(title="A1", pos=None), 1000.0)
+        ev, st = m.decide(st, _smp(title="B1", pos=None), 1005.0)
+        assert ev == "new" and st["tkey"] == "B1|A"
