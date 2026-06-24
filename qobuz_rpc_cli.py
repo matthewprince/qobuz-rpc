@@ -47,9 +47,19 @@ def main():
     qz_ok = mode != "none"
     if mode == "none": print("[*] No Qobuz auth, iTunes mode")
 
+    def rpc_connect():
+        try: r = Presence(app_id); r.connect(); return r
+        except Exception: return None
+    def rpc_drop(r):
+        try:
+            if r: r.close()
+        except Exception: pass
+        return None
+
     print("[*] Connecting to Discord...")
-    try: rpc = Presence(app_id); rpc.connect(); print("[+] Connected")
-    except Exception as e: print(f"[!] {e}"); sys.exit(1)
+    rpc = rpc_connect()
+    print("[+] Connected" if rpc else "[!] Discord not reachable, retrying in the background")
+    last_reconnect = time.time()
 
     tkey = None; tcover = None; talbum = None; tqual = ""; tdur = 0
     tstart = 0.0; playing = False; pause_pos = 0.0; last_sig = None; prev_status = None
@@ -65,6 +75,13 @@ def main():
             if 0 < dt < 10: listen_s += dt
         ltick = now if playing else 0
 
+        # reconnect if the Discord IPC pipe dropped (Discord restart/update/sleep)
+        if rpc is None and now - last_reconnect > 15:
+            last_reconnect = now
+            rpc = rpc_connect()
+            if rpc:
+                print(f"  [{time.strftime('%H:%M:%S')}] Reconnected to Discord"); last_sig = None
+
         try:
             sample = now_playing(cfg)
 
@@ -76,12 +93,14 @@ def main():
             if ev == "gone":
                 print(f"  [{ts}] Qobuz gone")
                 tkey = None; tcover = talbum = None; tqual = ""; tdur = 0; last_sig = None
-                try: rpc.clear()
-                except: pass
+                if rpc:
+                    try: rpc.clear()
+                    except Exception: rpc = rpc_drop(rpc); last_reconnect = now
             elif ev == "pause":
                 print(f"  [{ts}] Paused"); last_sig = None
-                try: rpc.clear()
-                except: pass
+                if rpc:
+                    try: rpc.clear()
+                    except Exception: rpc = rpc_drop(rpc); last_reconnect = now
             elif ev == "new":
                 songs += 1
                 t, a = sample["title"], sample["artist"]
@@ -101,7 +120,7 @@ def main():
             elif ev == "resume":
                 print(f"  [{ts}] Resumed")
 
-            if sample and sample["status"] == "playing":
+            if sample and sample["status"] == "playing" and rpc is not None:
                 show_q = tqual and cfg.get("show_quality_badge", True)
                 state = f"{sample['artist']} · {tqual}" if show_q else sample["artist"]
                 kw = {"details": sample["title"][:128], "state": state[:128]}
@@ -112,14 +131,17 @@ def main():
                 sig = (sample["title"], state, tcover, talbum, kw.get("start"))
                 if sig != last_sig:
                     try: rpc.update(**kw); last_sig = sig
-                    except: pass
+                    except Exception:
+                        print(f"  [{time.strftime('%H:%M:%S')}] Discord disconnected, reconnecting")
+                        rpc = rpc_drop(rpc); last_sig = None; last_reconnect = now
         except Exception as e:
             print(f"  [!] {e}")
 
         time.sleep(iv)
 
-    try: rpc.clear(); rpc.close()
-    except: pass
+    if rpc:
+        try: rpc.clear(); rpc.close()
+        except Exception: pass
     print(f"\n  Session: {fmt(time.time()-t0)} | Listened: {fmt(listen_s)} | {songs} songs\n")
 
 
