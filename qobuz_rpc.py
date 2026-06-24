@@ -475,6 +475,9 @@ class App:
         else:
             self.tcover = None; self.talbum = sample.get("album") or ""
             self.tqual = self.cfg.get("quality_label", ""); self.tdur = 0; self.turls = {}
+        if not self.tcover and sample.get("art"):   # MPRIS gives the browser's cover even with no API meta
+            self.tcover = sample["art"]
+            threading.Thread(target=self._fetch_cover, args=(self.tcover,), daemon=True).start()
         if not self.tdur and sample.get("dur"): self.tdur = int(sample["dur"] * 1000)
         self.root.after(0, lambda: self._set_np(t, a, self.talbum, self.tqual))
 

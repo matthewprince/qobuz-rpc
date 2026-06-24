@@ -573,8 +573,10 @@ def mpris_sample(status, metadata, position_us):
     dur = (metadata.get("mpris:length") or 0) / 1_000_000.0
     pos = (position_us or 0) / 1_000_000.0
     if dur > 0: pos = min(pos, dur)
+    art = metadata.get("mpris:artUrl") or ""
+    if not (isinstance(art, str) and art.startswith("http")): art = None   # Discord can't proxy file:// thumbs
     return {"status": "playing" if status == "Playing" else "paused",
-        "title": title, "artist": artist, "album": album, "pos": pos, "dur": dur}
+        "title": title, "artist": artist, "album": album, "pos": pos, "dur": dur, "art": art}
 
 def _mpris_choose(players, pref):
     # players: list of {name, status, metadata, pos}. Resolution order:

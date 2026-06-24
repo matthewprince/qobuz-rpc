@@ -94,6 +94,7 @@ def main():
                     print(f"             [{meta.get('src','')}] {talbum}{f' | {tqual}' if tqual else ''}")
                 else:
                     tcover = None; talbum = sample.get("album") or ""; tqual = cfg.get("quality_label",""); tdur = 0
+                if not tcover and sample.get("art"): tcover = sample["art"]   # browser-provided cover (Linux)
                 if not tdur and sample.get("dur"): tdur = int(sample["dur"]*1000)
             elif ev == "loop":
                 songs += 1; print(f"  [{ts}] Looped")
