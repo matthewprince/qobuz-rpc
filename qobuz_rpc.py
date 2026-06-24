@@ -102,8 +102,6 @@ class App:
         self.root.title("Qobuz RPC")
         self.root.configure(bg=BG)
         self.root.resizable(False, True)
-        self.root.geometry("480x920")
-        self.root.minsize(480, 700)
         self.root.protocol("WM_DELETE_WINDOW", self._close)
 
         if os.path.exists(ICON_ICO):
@@ -117,13 +115,35 @@ class App:
         self.cov_img = None
         self._ui()
         self._load_fields()
+        self._size_to_content()
         self._tick()
 
         if self.cfg.get("auto_connect"):
             self.root.after(500, self._start)
 
+    def _size_to_content(self):
+        # open at the natural content height, capped to the screen; the scrollbar
+        # handles any overflow so nothing clips and the window resizes freely
+        self.root.update_idletasks()
+        h = self.content.winfo_reqheight()
+        sh = self.root.winfo_screenheight()
+        self.root.geometry(f"498x{min(h, sh - 120)}")
+        self.root.minsize(440, 420)
+
     def _ui(self):
-        r = self.root
+        # scrollable container so the window can be any height without clipping
+        canvas = tk.Canvas(self.root, bg=BG, highlightthickness=0, bd=0, width=480)
+        vsb = tk.Scrollbar(self.root, orient="vertical", command=canvas.yview)
+        canvas.configure(yscrollcommand=vsb.set)
+        vsb.pack(side="right", fill="y")
+        canvas.pack(side="left", fill="both", expand=True)
+        r = tk.Frame(canvas, bg=BG)
+        self.content = r
+        # fixed 480-wide content so resizing never reflows the whole UI (that was the
+        # lag); the window only changes height and scrolls instead
+        self._win = canvas.create_window((0, 0), window=r, anchor="nw", width=480)
+        r.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+        canvas.bind_all("<MouseWheel>", lambda e: canvas.yview_scroll(int(-e.delta / 120), "units"))
 
         # header
         hdr = tk.Frame(r, bg=BG, padx=24, pady=16); hdr.pack(fill="x")
