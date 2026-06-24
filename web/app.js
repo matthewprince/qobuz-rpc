@@ -51,7 +51,7 @@
     $("f-discord").value = st.discord_app_id || "";
     $("f-email").value = st.qobuz_email || "";
     $("f-pw").value = st.has_password ? PW_PLACEHOLDER : "";
-    $("f-quality").value = st.quality_label || "Hi-Res 24-Bit / 96 kHz";
+    setQuality(st.quality_label || "Hi-Res 24-Bit / 96 kHz");
     $("f-interval").value = st.update_interval || 3;
     setToggle("t-badge", st.show_quality_badge);
     setToggle("t-auto", st.auto_connect);
@@ -59,6 +59,13 @@
   }
   const setToggle = (id, on) => $(id).setAttribute("aria-checked", on ? "true" : "false");
   const getToggle = (id) => $(id).getAttribute("aria-checked") === "true";
+
+  function setQuality(v) {
+    $("f-quality").value = v;
+    $("qlabel").textContent = v;
+    document.querySelectorAll("#qmenu li").forEach((li) =>
+      li.setAttribute("aria-selected", li.dataset.v === v ? "true" : "false"));
+  }
 
   // Repaint the live progress + session clocks on a coarse interval (every 250ms)
   // instead of every animation frame. A 60fps rAF loop forced the glass cards
@@ -86,6 +93,24 @@
     document.querySelectorAll(".toggle").forEach((t) => {
       t.onclick = () => t.setAttribute("aria-checked", getToggle(t.id) ? "false" : "true");
     });
+
+    // custom fallback-quality dropdown (native <select> popups can't be themed)
+    const qsel = $("qsel"), qbtn = $("qbtn"), qmenu = $("qmenu");
+    const closeQ = () => { qsel.classList.remove("open"); qmenu.hidden = true; qbtn.setAttribute("aria-expanded", "false"); };
+    qbtn.onclick = (e) => {
+      e.stopPropagation();
+      const open = !qsel.classList.contains("open");
+      qsel.classList.toggle("open", open); qmenu.hidden = !open; qbtn.setAttribute("aria-expanded", String(open));
+    };
+    qmenu.querySelectorAll("li").forEach((li) => { li.onclick = () => { setQuality(li.dataset.v); closeQ(); }; });
+    document.addEventListener("click", (e) => { if (!qsel.contains(e.target)) closeQ(); });
+    document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeQ(); });
+
+    // number stepper for the update interval
+    const step = (d) => { const el = $("f-interval"); let v = parseInt(el.value, 10); if (isNaN(v)) v = 3; el.value = Math.max(1, v + d); };
+    document.querySelector(".step-up").onclick = () => step(1);
+    document.querySelector(".step-down").onclick = () => step(-1);
+
     $("savebtn").onclick = () => {
       const s = {
         discord_app_id: $("f-discord").value,

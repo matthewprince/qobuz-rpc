@@ -11,7 +11,7 @@
 [hidden]{display:none !important;}
 html,body{height:100%;}
 body{
-  background:var(--navy); color:var(--head);
+  background:var(--navy); color:var(--head); color-scheme:dark;
   font-family:'Inter','Segoe UI',system-ui,sans-serif; font-size:14px;
   overflow-x:hidden; overflow-y:auto; user-select:none;
 }
@@ -137,10 +137,49 @@ main{position:relative; z-index:1; padding:0 18px 18px;}
 .settings input:focus, .settings select:focus{border-color:var(--mint); box-shadow:0 0 0 1px var(--mint);}
 .settings select{appearance:none; -webkit-appearance:none; cursor:pointer;}
 .settings input[type=number]{-moz-appearance:textfield;}
+.settings input[type=number]::-webkit-outer-spin-button,
+.settings input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none; margin:0;}
+.stepper{position:relative; margin-bottom:13px;}
+.stepper input{margin-bottom:0; padding-right:46px;}
+.step-btns{position:absolute; right:7px; top:50%; transform:translateY(-50%); display:flex; flex-direction:column; gap:3px;
+  opacity:0; pointer-events:none; transition:opacity .15s;}
+.stepper:hover .step-btns, .stepper:focus-within .step-btns{opacity:1; pointer-events:auto;}
+.step-btn{
+  -webkit-app-region:no-drag; width:28px; height:16px; padding:0; border:1px solid var(--gb);
+  background:rgba(255,255,255,0.05); color:var(--body); border-radius:6px; cursor:pointer;
+  display:flex; align-items:center; justify-content:center; transition:background .15s, color .15s, border-color .15s;
+}
+.step-btn:hover{background:rgba(61,168,254,0.16); color:var(--mint); border-color:rgba(61,168,254,0.45);}
+.step-btn:active{background:rgba(61,168,254,0.28);}
+.step-btn i{font-size:13px; line-height:1;}
 .two{display:flex; gap:12px;}
 .two > div{flex:1; min-width:0;}
-.selwrap{position:relative;}
-.selwrap i{position:absolute; right:14px; top:13px; color:var(--body); font-size:16px; pointer-events:none;}
+/* custom dropdown (native select popups can't be themed) */
+.select{position:relative; margin-bottom:13px;}
+.select-btn{
+  width:100%; box-sizing:border-box; display:flex; align-items:center; justify-content:space-between; gap:10px;
+  background:rgba(255,255,255,0.06); border:1px solid var(--gb); border-radius:var(--r);
+  color:var(--head); font:14px 'Inter',sans-serif; padding:11px 14px; cursor:pointer; text-align:left;
+  transition:border-color .2s, box-shadow .2s;
+}
+.select-btn:hover{border-color:rgba(255,255,255,0.20);}
+.select-btn > i{color:var(--body); font-size:16px; transition:transform .2s; flex:0 0 auto;}
+.select.open .select-btn{border-color:var(--mint); box-shadow:0 0 0 1px var(--mint);}
+.select.open .select-btn > i{transform:rotate(180deg); color:var(--mint);}
+.select-menu{
+  position:absolute; left:0; right:0; top:calc(100% + 6px); z-index:30; margin:0; padding:6px; list-style:none;
+  background:rgba(13,19,33,0.97); -webkit-backdrop-filter:blur(14px); backdrop-filter:blur(14px);
+  border:1px solid var(--gb); border-radius:14px;
+  box-shadow:0 16px 40px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.06);
+}
+.select-menu li{
+  display:flex; align-items:center; justify-content:space-between; gap:10px;
+  padding:9px 12px; border-radius:10px; font-size:14px; color:var(--body); cursor:pointer; transition:background .12s, color .12s;
+}
+.select-menu li:hover{background:rgba(255,255,255,0.07); color:var(--head);}
+.select-menu li > i{font-size:16px; color:var(--mint); opacity:0; flex:0 0 auto;}
+.select-menu li[aria-selected="true"]{color:var(--mint);}
+.select-menu li[aria-selected="true"] > i{opacity:1;}
 .hint{font-size:12px; color:var(--sub); line-height:1.5; margin:2px 0 16px;}
 
 .toggle-row{display:flex; align-items:center; justify-content:space-between; margin-bottom:13px;}
