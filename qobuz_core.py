@@ -488,6 +488,34 @@ def qobuz_title():
     except: pass
     return max(titles, key=len) if titles else None
 
+_qpos_state = {"value": None, "changed": 0.0}
+def _qobuz_player_position():
+    # Live playback position (seconds) from the Qobuz desktop app's state file,
+    # %APPDATA%/Qobuz/player-0.json (the Electron app does not publish SMTC, so the
+    # window-title scraper has no position; this fills it in). Qobuz rewrites
+    # position.value (ms) + timestamp only about every 10s - value advances while
+    # playing, freezes while paused - so between writes we extrapolate from the
+    # timestamp. If value has not advanced for >12s we treat it as paused and stop
+    # extrapolating. Returns None when the file is stale (app closed) or missing.
+    if not IS_WIN: return None
+    try:
+        path = os.path.join(os.environ.get("APPDATA", ""), "Qobuz", "player-0.json")
+        with open(path, encoding="utf-8") as f:
+            pos = ((json.load(f).get("player") or {}).get("data") or {}).get("position") or {}
+        value, ts = pos.get("value"), pos.get("timestamp")
+        if value is None or ts is None: return None
+        now_ms = time.time() * 1000
+        gap = now_ms - ts
+        if gap < -2000 or gap > 60000: return None   # stale (app closed) or clock skew
+        st = _qpos_state
+        if value != st["value"]:
+            st["value"] = value; st["changed"] = now_ms
+        if now_ms - st["changed"] > 12000:           # value frozen -> paused, don't extrapolate
+            return max(0.0, value / 1000.0)
+        return max(0.0, (value + max(0.0, gap)) / 1000.0)
+    except Exception:
+        return None
+
 
 # --- Windows source: SMTC media session --------------------------------------
 # exact title/artist/album + real position & play/pause for the qobuz session.
@@ -631,7 +659,7 @@ def now_playing(cfg):
         if raw is None: return None
         p = parse(raw)
         if p: return {"status": "playing", "title": p["title"], "artist": p["artist"],
-            "album": None, "pos": None, "dur": None}
+            "album": None, "pos": _qobuz_player_position(), "dur": None}
         return {"status": "paused", "title": "", "artist": "", "album": None, "pos": None, "dur": None}
     if IS_LINUX:
         if cfg.get("use_mpris", True):
