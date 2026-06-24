@@ -1,0 +1,13 @@
+# Normalize line endings in the repo; check out per platform.
+* text=auto
+
+# Shell scripts must stay LF or they break on Linux, even on a Windows checkout.
+*.sh text eol=lf
+
+# Windows scripts stay CRLF.
+*.bat text eol=crlf
+
+# Binary assets
+*.png binary
+*.ico binary
+*.exe binary

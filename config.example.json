@@ -8,5 +8,9 @@
   "fallback_cover": "",
   "auto_connect": false,
   "minimize_to_tray": false,
-  "start_with_windows": false
+  "start_with_windows": false,
+  "use_smtc": true,
+  "use_mpris": true,
+  "mpris_player": "",
+  "use_desktop_session": true
 }
