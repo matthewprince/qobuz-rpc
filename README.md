@@ -65,6 +65,8 @@ There is no official Qobuz desktop app for Linux, so the "now playing" data come
 
 If you also use other MPRIS players (Spotify, VLC, etc.) and want to pin one, set `mpris_player` in `config.json` or the GUI field to a substring of its bus name.
 
+Album art comes straight from the browser's media session, so covers work with zero setup. The only thing that needs a Qobuz login on Linux is the **Hi-Res quality badge** (there is no desktop app to borrow a session from): enter your Qobuz email and password once if you want it, otherwise everything else works without it.
+
 ## Building a standalone binary
 
 - **Windows**: `build.bat` outputs `dist/QobuzRPC.exe` (GUI) and `dist/QobuzRPC-CLI.exe` (console).

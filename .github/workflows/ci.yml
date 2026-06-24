@@ -28,3 +28,8 @@ jobs:
         run: python -m py_compile qobuz_core.py qobuz_rpc.py qobuz_rpc_cli.py
       - name: Test
         run: pytest -q
+      - name: Live MPRIS test (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          pip install dbus-next
+          dbus-run-session -- python _mpris_livetest.py

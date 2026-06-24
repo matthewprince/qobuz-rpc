@@ -160,6 +160,19 @@ class TestMprisSample:
         s = core.mpris_sample("Playing", {"xesam:title": "T"}, None)
         assert s["dur"] == 0 and s["pos"] == 0
 
+    def test_http_art_passthrough(self):
+        s = core.mpris_sample("Playing",
+            {"xesam:title": "T", "mpris:artUrl": "https://static.qobuz.com/x.jpg"}, 0)
+        assert s["art"] == "https://static.qobuz.com/x.jpg"
+
+    def test_file_art_dropped(self):
+        s = core.mpris_sample("Playing",
+            {"xesam:title": "T", "mpris:artUrl": "file:///tmp/cover.png"}, 0)
+        assert s["art"] is None
+
+    def test_art_absent_is_none(self):
+        assert core.mpris_sample("Playing", {"xesam:title": "T"}, 0)["art"] is None
+
 
 # MPRIS player selection - the "which player is Qobuz" resolution order
 class TestMprisChoose:
