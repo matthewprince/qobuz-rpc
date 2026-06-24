@@ -1,6 +1,6 @@
 import hashlib, signal, sys, time
 
-try: from pypresence import Presence
+try: from pypresence import Presence, ActivityType, StatusDisplayType
 except ImportError: print("[!] pip install pypresence"); sys.exit(1)
 
 # all the shared + platform logic lives in qobuz_core
@@ -105,7 +105,8 @@ def main():
                 print(f"  [{ts}] Paused"); last_sig = None
                 t = tkey.split("|", 1)[0] if tkey else ""   # title goes blank when paused; tkey keeps it
                 if rpc and t:   # show the track as paused (no timer) rather than clearing
-                    kw = {"details": t[:128], "state": "Paused",
+                    kw = {"activity_type": ActivityType.LISTENING, "status_display_type": StatusDisplayType.DETAILS,
+                        "details": t[:128], "state": "Paused",
                         "small_image": PAUSE_ICON_URL, "small_text": "Paused"}
                     big = tcover or cfg.get("fallback_cover")
                     if big: kw["large_image"] = big
@@ -137,7 +138,8 @@ def main():
             if sample and sample["status"] == "playing" and rpc is not None:
                 show_q = tqual and cfg.get("show_quality_badge", True)
                 state = f"{sample['artist']} · {tqual}" if show_q else sample["artist"]
-                kw = {"details": sample["title"][:128], "state": state[:128]}
+                kw = {"activity_type": ActivityType.LISTENING, "status_display_type": StatusDisplayType.DETAILS,
+                    "details": sample["title"][:128], "state": state[:128]}
                 big = tcover or cfg.get("fallback_cover")
                 if big: kw["large_image"] = big
                 if talbum: kw["large_text"] = talbum[:128]
