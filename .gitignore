@@ -33,3 +33,7 @@ desktop.ini
 
 # startup script (auto-generated, contains local paths)
 QobuzRPC.vbs
+
+# local scratch (not part of the project)
+_glassds/
+_smtc_probe.py

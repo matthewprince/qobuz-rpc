@@ -24,9 +24,13 @@ python -m PyInstaller --noconfirm --onefile --windowed ^
     --add-data "icon.ico;." ^
     --add-data "icon.png;." ^
     --add-data "config.example.json;." ^
-    --hidden-import "pystray._win32" ^
+    --add-data "web;web" ^
     --collect-all "winrt" ^
-    qobuz_rpc.py
+    --collect-all "webview" ^
+    --collect-all "clr_loader" ^
+    --collect-all "pythonnet" ^
+    --hidden-import "clr" ^
+    qobuz_app.py
 
 echo.
 echo [*] Building CLI version (QobuzRPC-CLI.exe)...
