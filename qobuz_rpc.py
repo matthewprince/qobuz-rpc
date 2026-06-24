@@ -340,17 +340,19 @@ class App:
             "activity_type": ActivityType.LISTENING,
             "status_display_type": StatusDisplayType.DETAILS,
             "details": title[:128],
-            "large_image": cover or self.cfg.get("fallback_cover") or "qobuz_icon",
         }
+        big = cover or self.cfg.get("fallback_cover")
+        if big: kw["large_image"] = big
         if artist: kw["state"] = f"by {artist}"[:128]
-        if album: kw["large_text"] = album[:128]
+        # no Discord art asset is shipped, so fold quality into the cover hover text
+        show_q = quality and self.cfg.get("show_quality_badge", True)
+        lt = " · ".join(x for x in [album, quality if show_q else ""] if x)
+        if lt: kw["large_text"] = lt[:128]
         if self.tdur and self.tstart > 0:
             kw["start"] = int(self.tstart)
             kw["end"] = int(self.tstart + self.tdur / 1000)
         elif self.tstart > 0:
             kw["start"] = int(self.tstart)
-        if self.cfg.get("show_quality_badge", True) and quality:
-            kw["small_image"] = "qobuz_icon"; kw["small_text"] = quality
 
         btns = []
         urls = self.turls or {}

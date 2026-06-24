@@ -101,13 +101,13 @@ def main():
                 print(f"  [{ts}] Resumed")
 
             if sample and sample["status"] == "playing":
-                state = f"{sample['artist']} · {tqual}" if tqual else sample["artist"]
-                kw = {"details": sample["title"][:128], "state": state[:128],
-                    "large_image": tcover or cfg.get("fallback_cover") or "qobuz_icon",
-                    "large_text": (talbum or "Qobuz")[:128]}
+                show_q = tqual and cfg.get("show_quality_badge", True)
+                state = f"{sample['artist']} · {tqual}" if show_q else sample["artist"]
+                kw = {"details": sample["title"][:128], "state": state[:128]}
+                big = tcover or cfg.get("fallback_cover")
+                if big: kw["large_image"] = big
+                if talbum: kw["large_text"] = talbum[:128]
                 if tstart > 0: kw["start"] = int(tstart)
-                if cfg.get("show_quality_badge", True):
-                    kw["small_image"] = "qobuz_icon"; kw["small_text"] = tqual or "Qobuz"
                 sig = (sample["title"], state, tcover, talbum, kw.get("start"))
                 if sig != last_sig:
                     try: rpc.update(**kw); last_sig = sig
