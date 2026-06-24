@@ -18,7 +18,7 @@ except ImportError:
 from qobuz_core import (
     QobuzAPI, authenticate_qobuz, itunes_lookup, get_img, parse, fmt, quality_str, decide,
     load_cfg, save_cfg, get_pw_hash, set_pw_hash, set_autostart, now_playing,
-    SCRIPT_DIR, IS_WIN, IS_LINUX, DEFAULT_DISCORD_APP_ID,
+    SCRIPT_DIR, IS_WIN, IS_LINUX, DEFAULT_DISCORD_APP_ID, PAUSE_ICON_URL,
 )
 
 ICON_ICO = os.path.join(SCRIPT_DIR, "icon.ico")
@@ -338,6 +338,22 @@ class App:
             if self.rpc and self.rpc_ok: self.rpc.clear()
         except: pass
 
+    def _push_paused(self):
+        # show the current track as paused (no timer) instead of clearing; the window
+        # title goes blank when paused, so use the track we remembered in tkey
+        title = (self.tkey or "").split("|", 1)[0]
+        if not (self.rpc_ok and self.rpc and title):
+            self._rpc_clear(); return
+        kw = {"activity_type": ActivityType.LISTENING, "status_display_type": StatusDisplayType.DETAILS,
+            "details": title[:128], "state": "Paused",
+            "small_image": PAUSE_ICON_URL, "small_text": "Paused"}
+        big = self.tcover or self.cfg.get("fallback_cover")
+        if big: kw["large_image"] = big
+        if self.talbum: kw["large_text"] = self.talbum[:128]
+        self._last_sig = None
+        try: self.rpc.update(**kw)
+        except Exception as e: self.log(f"RPC error: {e}"); self.rpc_ok = False
+
     def _push_rpc(self, title, artist, album, cover, quality):
         if not self.rpc_ok: return
         kw = {
@@ -416,7 +432,7 @@ class App:
         while self.monitoring:
             try:
                 now = time.time()
-                if not self.rpc_ok and now - self._last_reconnect > 15:
+                if not self.rpc_ok and now - self._last_reconnect > 5:
                     self._last_reconnect = now   # reconnect if Discord dropped the pipe
                     if self._connect_rpc(): self._last_sig = None
                 sample = self._sample()
@@ -433,7 +449,7 @@ class App:
                 elif ev == "pause":
                     self.root.after(0, lambda: self.log("Paused"))
                     self.root.after(0, lambda: self.np.config(text="PAUSED", fg=AMBER))
-                    self._rpc_clear()
+                    self._push_paused()
                 elif ev == "new":
                     self.songs += 1
                     self._load_track(sample)
