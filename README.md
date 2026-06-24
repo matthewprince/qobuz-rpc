@@ -2,6 +2,10 @@
 
 Discord Rich Presence for the Qobuz music streaming service. Shows what you're listening to with real per-track quality, album art, and a progress timer. Runs on **Windows and Linux**.
 
+<p align="center">
+  <img src="docs/preview.png" alt="Qobuz RPC glass desktop UI" width="380">
+</p>
+
 ## What it does
 
 - Detects what Qobuz is playing from the system media session
