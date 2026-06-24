@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Qobuz RPC</title>
+<link rel="icon" href="favicon.png">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.31.0/dist/tabler-icons.min.css">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="glows"></div>
+
+<header class="titlebar pywebview-drag-region">
+  <div class="wordmark"><img class="logo" src="favicon.png" alt="">Qobuz <span>RPC</span></div>
+  <div class="winbtns">
+    <button id="btn-min" title="Minimize" aria-label="Minimize"><i class="ti ti-minus"></i></button>
+    <button id="btn-close" class="danger" title="Close" aria-label="Close"><i class="ti ti-x"></i></button>
+  </div>
+</header>
+
+<main>
+  <div class="statusrow">
+    <div class="status-pill" id="statuspill">
+      <span class="dot"></span><span id="statustext">Idle</span>
+    </div>
+  </div>
+
+  <section class="card nowplaying">
+    <div class="np-row">
+      <div class="art" id="art">
+        <img id="artimg" alt="" hidden>
+        <i class="ti ti-music ph" aria-hidden="true"></i>
+        <span class="pausebadge" id="pausebadge" hidden><i class="ti ti-player-pause"></i></span>
+      </div>
+      <div class="np-info">
+        <div class="np-label" id="nplabel">Now playing</div>
+        <div class="np-title" id="nptitle">Nothing playing</div>
+        <div class="np-artist" id="npartist"></div>
+        <div class="badge" id="qbadge" hidden><i class="ti ti-wave-sine" aria-hidden="true"></i><span id="qtext"></span></div>
+      </div>
+    </div>
+    <div class="progress" id="progress" hidden>
+      <div class="bar"><div class="fill" id="fill"></div></div>
+      <div class="times"><span id="t-pos">0:00</span><span id="t-dur">0:00</span></div>
+    </div>
+  </section>
+
+  <button class="btn-brand" id="connectbtn">Connect</button>
+
+  <section class="card stats">
+    <div class="stat"><div class="k">Session</div><div class="v" id="s-session">0:00</div></div>
+    <div class="sep"></div>
+    <div class="stat"><div class="k">Listened</div><div class="v mint" id="s-listen">0:00</div></div>
+    <div class="sep"></div>
+    <div class="stat"><div class="k">Songs</div><div class="v" id="s-songs">0</div></div>
+  </section>
+
+  <section class="card settings">
+    <div class="card-h">Settings</div>
+
+    <label for="f-discord">Discord application ID</label>
+    <input id="f-discord" placeholder="Using built-in app" autocomplete="off">
+
+    <div class="two">
+      <div>
+        <label for="f-email">Qobuz email</label>
+        <input id="f-email" placeholder="Optional" autocomplete="off">
+      </div>
+      <div>
+        <label for="f-pw">Qobuz password</label>
+        <input id="f-pw" type="password" placeholder="Optional" autocomplete="off">
+      </div>
+    </div>
+
+    <label for="f-quality">Fallback quality</label>
+    <div class="selwrap">
+      <select id="f-quality">
+        <option>Hi-Res 24-Bit / 192 kHz</option>
+        <option>Hi-Res 24-Bit / 96 kHz</option>
+        <option>CD 16-Bit / 44.1 kHz</option>
+        <option>MP3 320 kbps</option>
+      </select>
+      <i class="ti ti-chevron-down" aria-hidden="true"></i>
+    </div>
+
+    <label for="f-interval">Update interval (seconds)</label>
+    <input id="f-interval" type="number" min="1" value="3">
+
+    <div class="hint">Leave blank to use the built-in Discord app and your running Qobuz session.</div>
+
+    <div class="toggle-row">
+      <span>Show quality badge</span>
+      <button class="toggle" id="t-badge" role="switch" aria-checked="false"><span class="thumb"></span></button>
+    </div>
+    <div class="toggle-row">
+      <span>Auto-connect on launch</span>
+      <button class="toggle" id="t-auto" role="switch" aria-checked="false"><span class="thumb"></span></button>
+    </div>
+    <div class="toggle-row">
+      <span>Start with Windows</span>
+      <button class="toggle" id="t-start" role="switch" aria-checked="false"><span class="thumb"></span></button>
+    </div>
+
+    <button class="btn-secondary save" id="savebtn">Save settings</button>
+  </section>
+
+  <div class="msg" id="msg">Idle</div>
+</main>
+
+<script src="app.js"></script>
+</body>
+</html>

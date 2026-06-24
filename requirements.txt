@@ -11,5 +11,9 @@ winrt-Windows.Media.Control>=2.0;           sys_platform == "win32"
 winrt-Windows.Foundation>=2.0;              sys_platform == "win32"
 winrt-Windows.Foundation.Collections>=2.0;  sys_platform == "win32"
 
+# windows: glass desktop UI (pywebview over the system WebView2 runtime)
+pywebview>=5.0;                             sys_platform == "win32"
+pythonnet>=3.0;                             sys_platform == "win32"
+
 # linux: MPRIS media session over D-Bus
 jeepney>=0.8;                               sys_platform == "linux"

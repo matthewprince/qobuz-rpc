@@ -1,2 +1,2 @@
 @echo off
-start "" pythonw "%~dp0qobuz_rpc.py"
+start "" pythonw "%~dp0qobuz_app.py"

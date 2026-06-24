@@ -18,7 +18,7 @@ Quality is pulled from the Qobuz catalog per track, not a static setting. If you
 
 - Python 3.10+ (3.12 through 3.14 all work)
 - Discord desktop app
-- **Windows 10/11**: the Qobuz desktop app
+- **Windows 10/11**: the Qobuz desktop app. The desktop UI runs on the WebView2 runtime, which is built into Windows 10/11.
 - **Linux**: a player that publishes MPRIS (the Qobuz web player in a browser, or a third-party client) and a D-Bus session bus. The GUI also needs Tk (`sudo apt-get install python3-tk` or your distro's equivalent).
 
 ## Setup
@@ -50,10 +50,10 @@ Optional fallbacks, only if the automatic path isn't available (the Linux web pl
 
 | | Windows | Linux |
 |---|---|---|
-| GUI | `start.bat` or `python qobuz_rpc.py` | `bash start.sh` or `python3 qobuz_rpc.py` |
+| GUI | `start.bat` or `python qobuz_app.py` | `bash start.sh` or `python3 qobuz_rpc.py` |
 | CLI | `start_cli.bat` or `python qobuz_rpc_cli.py` | `bash start_cli.sh` or `python3 qobuz_rpc_cli.py` |
 
-On Linux the CLI is the lightest option (no Tk needed). `pipx install` from source works too.
+The Windows GUI is the glass desktop app (`qobuz_app.py`); the Tk GUI (`qobuz_rpc.py`) is the default on Linux and also runs on Windows. On Linux the CLI is the lightest option (no Tk needed). `pipx install` from source works too.
 
 ## Linux: which player gets tracked
 
@@ -92,7 +92,8 @@ API credentials (`app_id` and `app_secret`) are extracted dynamically from the Q
 ### Code layout
 
 - `qobuz_core.py` - shared logic: config, credentials, the Qobuz API, the iTunes fallback, the pure state machine, and the platform "now playing" sources (SMTC + window title on Windows, MPRIS on Linux)
-- `qobuz_rpc.py` - the Tk GUI
+- `qobuz_app.py` + `web/` - the glass desktop UI (pywebview); the default GUI on Windows
+- `qobuz_rpc.py` - the Tk GUI; the default GUI on Linux, and a fallback on Windows
 - `qobuz_rpc_cli.py` - the console version
 
 ## Credits
