@@ -3,6 +3,7 @@ import os, sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import pytest
+import qobuz_core as core
 import qobuz_rpc as g
 import qobuz_rpc_cli as c
 
@@ -120,3 +121,72 @@ class TestDecide:
         ev, st = m.decide(_idle(), _smp(title="A1", pos=None), 1000.0)
         ev, st = m.decide(st, _smp(title="B1", pos=None), 1005.0)
         assert ev == "new" and st["tkey"] == "B1|A"
+
+
+# MPRIS metadata -> sample, the pure half of the Linux source (no D-Bus needed)
+class TestMprisSample:
+    def test_playing_basic(self):
+        s = core.mpris_sample("Playing",
+            {"xesam:title": "T", "xesam:artist": ["A1", "A2"], "xesam:album": "Al",
+             "mpris:length": 200_000_000}, 30_000_000)
+        assert s["status"] == "playing" and s["title"] == "T"
+        assert s["artist"] == "A1, A2" and s["album"] == "Al"
+        assert abs(s["dur"] - 200.0) < 0.01 and abs(s["pos"] - 30.0) < 0.01
+
+    def test_paused(self):
+        s = core.mpris_sample("Paused", {"xesam:title": "T", "xesam:artist": ["A"]}, 0)
+        assert s["status"] == "paused" and s["artist"] == "A"
+
+    def test_stopped_is_none(self):
+        assert core.mpris_sample("Stopped", {"xesam:title": "T"}, 0) is None
+
+    def test_unknown_status_is_none(self):
+        assert core.mpris_sample(None, {"xesam:title": "T"}, 0) is None
+
+    def test_no_title_is_none(self):
+        assert core.mpris_sample("Playing", {"xesam:artist": ["A"]}, 0) is None
+        assert core.mpris_sample("Playing", {"xesam:title": "   "}, 0) is None
+
+    def test_artist_string_not_list(self):
+        s = core.mpris_sample("Playing", {"xesam:title": "T", "xesam:artist": "Solo"}, 0)
+        assert s["artist"] == "Solo"
+
+    def test_position_clamped_to_duration(self):
+        s = core.mpris_sample("Playing",
+            {"xesam:title": "T", "mpris:length": 100_000_000}, 250_000_000)
+        assert abs(s["dur"] - 100.0) < 0.01 and abs(s["pos"] - 100.0) < 0.01
+
+    def test_missing_length_and_position(self):
+        s = core.mpris_sample("Playing", {"xesam:title": "T"}, None)
+        assert s["dur"] == 0 and s["pos"] == 0
+
+
+# MPRIS player selection - the "which player is Qobuz" resolution order
+class TestMprisChoose:
+    @staticmethod
+    def _p(name, status="Playing", url="", art=""):
+        return {"name": f"org.mpris.MediaPlayer2.{name}", "status": status,
+                "metadata": {"xesam:url": url, "mpris:artUrl": art}, "pos": 0}
+
+    def test_prefers_qobuz_in_name(self):
+        chosen = core._mpris_choose(
+            [self._p("firefox", "Playing"), self._p("qobuz", "Paused")], "")
+        assert chosen["name"].endswith("qobuz")
+
+    def test_matches_qobuz_in_art_url(self):
+        chosen = core._mpris_choose(
+            [self._p("firefox", "Playing", art="https://static.qobuz.com/cover.jpg")], "")
+        assert chosen["name"].endswith("firefox")
+
+    def test_configured_substring_wins_over_playing(self):
+        chosen = core._mpris_choose(
+            [self._p("chromium", "Playing"), self._p("firefox", "Paused")], "firefox")
+        assert chosen["name"].endswith("firefox")
+
+    def test_falls_back_to_first_playing(self):
+        chosen = core._mpris_choose(
+            [self._p("vlc", "Paused"), self._p("spotify", "Playing")], "")
+        assert chosen["name"].endswith("spotify")
+
+    def test_none_when_nothing_relevant(self):
+        assert core._mpris_choose([self._p("vlc", "Paused")], "") is None

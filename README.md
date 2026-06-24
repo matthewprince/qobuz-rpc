@@ -1,10 +1,10 @@
 # Qobuz RPC
 
-Discord Rich Presence for the Qobuz music streaming service. Shows what you're listening to with real per-track quality, album art, and a progress timer.
+Discord Rich Presence for the Qobuz music streaming service. Shows what you're listening to with real per-track quality, album art, and a progress timer. Runs on **Windows and Linux**.
 
 ## What it does
 
-- Detects what Qobuz is playing via the window title
+- Detects what Qobuz is playing from the system media session
 - Looks up the track on the Qobuz API for actual quality metadata (bit depth, sample rate)
 - Falls back to iTunes Search API if Qobuz API is unavailable
 - Pushes album art, song title, artist, album name, and quality to Discord
@@ -16,10 +16,10 @@ Quality is pulled from the Qobuz catalog per track, not a static setting. If you
 
 ## Requirements
 
-- Windows 10/11
-- Python 3.10+ (3.12 through 3.14 all work; every dependency ships prebuilt wheels)
+- Python 3.10+ (3.12 through 3.14 all work)
 - Discord desktop app
-- Qobuz desktop app
+- **Windows 10/11**: the Qobuz desktop app
+- **Linux**: a player that publishes MPRIS (the Qobuz web player in a browser, or a third-party client) and a D-Bus session bus. The GUI also needs Tk (`sudo apt-get install python3-tk` or your distro's equivalent).
 
 ## Setup
 
@@ -27,51 +27,71 @@ Quality is pulled from the Qobuz catalog per track, not a static setting. If you
 pip install -r requirements.txt
 ```
 
-Or run `setup.bat`.
+`requirements.txt` uses platform markers, so pip only installs the bits for your OS (pywin32/winrt/pystray on Windows, jeepney on Linux).
 
-### Discord Application
+Windows users can run `setup.bat` instead; Linux/macOS users can run `bash setup.sh`.
 
-1. Go to [Discord Developer Portal](https://discord.com/developers/applications)
-2. Create a new application (name it whatever you want, e.g. "Qobuz")
-3. Copy the **Application ID**
-4. Optionally upload a Qobuz logo as `qobuz_icon` under Rich Presence > Art Assets
+### Credentials (mostly automatic)
 
-### Configure
+In the common case you don't enter anything.
 
-Copy `config.example.json` to `config.json`, or just run the app and it'll create one.
+- **Discord**: a Discord application id is a public client id, not a secret, so the app ships with a built-in one. You don't register your own. (Maintainers/self-builders: set `DEFAULT_DISCORD_APP_ID` in `qobuz_core.py` to your "Qobuz" app's id, and upload a `qobuz_icon` art asset to it.)
+- **Qobuz (Windows)**: if the Qobuz desktop app is installed and signed in (which it is, since you use it to play music), the app reuses that existing session token automatically. No email or password.
 
-Run `start.bat` (GUI) or `python qobuz_rpc_cli.py --setup` (CLI).
+Optional fallbacks, only if the automatic path isn't available (the Linux web player, or no Qobuz desktop app):
 
-Enter your Discord Application ID, Qobuz email, and password. The password is MD5 hashed locally and stored in the **Windows Credential Manager** (not `config.json`). The hash is what Qobuz authenticates against, so keeping it out of plain files is deliberate; an existing hash from an older `config.json` is migrated into Credential Manager automatically on first run. (`config.json` is gitignored regardless.)
+- Enter your Qobuz email and password once in settings or via `python qobuz_rpc_cli.py --setup`. The password is MD5 hashed locally; on Windows the hash goes in the **Credential Manager**, on Linux into `config.json` (created `0600`, owner-only). `config.json` is gitignored.
+- With no Qobuz auth at all, the app still runs and falls back to the iTunes Search API for metadata and art (no per-track quality badge).
+- You can also override the Discord id with your own in settings.
 
-Qobuz credentials are optional. Without them the app falls back to iTunes for metadata (no per-track quality detection).
+`config.json` is created automatically on first run (or copy `config.example.json`).
 
 ### Run
 
-**GUI:** `start.bat` or `python qobuz_rpc.py`
+| | Windows | Linux |
+|---|---|---|
+| GUI | `start.bat` or `python qobuz_rpc.py` | `bash start.sh` or `python3 qobuz_rpc.py` |
+| CLI | `start_cli.bat` or `python qobuz_rpc_cli.py` | `bash start_cli.sh` or `python3 qobuz_rpc_cli.py` |
 
-**CLI:** `start_cli.bat` or `python qobuz_rpc_cli.py`
+On Linux the CLI is the lightest option (no Tk needed). `pipx install` from source works too.
 
-## Building an EXE
+## Linux: which player gets tracked
 
-```
-build.bat
-```
+There is no official Qobuz desktop app for Linux, so the "now playing" data comes from whatever MPRIS player is active, usually your browser playing [play.qobuz.com](https://play.qobuz.com). The app picks a player in this order:
 
-Outputs `dist/QobuzRPC.exe` (GUI) and `dist/QobuzRPC-CLI.exe` (console). Requires PyInstaller.
+1. A player whose bus name or track art/URL mentions `qobuz`
+2. A player whose bus name contains your configured **MPRIS player** substring (e.g. `firefox`, `chromium`)
+3. The first player that is currently playing
+
+If you also use other MPRIS players (Spotify, VLC, etc.) and want to pin one, set `mpris_player` in `config.json` or the GUI field to a substring of its bus name.
+
+## Building a standalone binary
+
+- **Windows**: `build.bat` outputs `dist/QobuzRPC.exe` (GUI) and `dist/QobuzRPC-CLI.exe` (console).
+- **Linux**: `bash build.sh` outputs `dist/QobuzRPC` and `dist/QobuzRPC-CLI`.
+
+Both require PyInstaller. Linux binaries are tied to the build machine's glibc; for distribution, running from source or `pipx` is usually friendlier.
 
 ## Options
 
-- **Use Windows media session (SMTC)** - read Qobuz's media session for exact metadata and real position; falls back to the window title when off or unavailable
+- **Use media session** - read the system media session for exact metadata and real position. This is SMTC on Windows and MPRIS on Linux; falls back to the Qobuz window title on Windows when off or unavailable.
 - **Auto-connect on launch** - connects automatically when the app starts
-- **Minimize to tray on close** - hides to system tray instead of quitting
-- **Start with Windows** - creates a startup script in your Startup folder
+- **Minimize to tray on close** - hides to system tray instead of quitting (Windows; Linux only if a `pystray` backend is installed)
+- **Start with Windows / Start on login** - registers an autostart entry (Startup `.vbs` on Windows, `~/.config/autostart/*.desktop` on Linux)
 
 ## How it works
 
-By default the app reads the Windows media session (SMTC) that Qobuz publishes, which gives the exact track title, artist, album, real playback position, and play/pause state. If that's unavailable (Qobuz not reporting to SMTC, or `winrt` not installed) it falls back to reading the Qobuz desktop window title ("Track - Artist"). Either way it then searches the Qobuz API (`/track/search`) for that track to get the real `maximum_bit_depth` and `maximum_sampling_rate` from the catalog, plus album art from the Qobuz CDN. If the Qobuz API fails, it falls back to the iTunes Search API. You can turn the media-session source off in Settings to force the window-title method.
+The app reads the system media session that the player publishes, which gives the exact track title, artist, album, real playback position, and play/pause state. On Windows that's SMTC (the Qobuz desktop app's session); on Linux it's MPRIS over the D-Bus session bus. On Windows, if SMTC is unavailable it falls back to reading the Qobuz desktop window title ("Track - Artist").
+
+Either way it then searches the Qobuz API (`/track/search`) for that track to get the real `maximum_bit_depth` and `maximum_sampling_rate` from the catalog, plus album art from the Qobuz CDN. If the Qobuz API fails, it falls back to the iTunes Search API.
 
 API credentials (`app_id` and `app_secret`) are extracted dynamically from the Qobuz web player's `bundle.js`, same method used by [QobuzApiSharp](https://github.com/DJDoubleD/QobuzApiSharp).
+
+### Code layout
+
+- `qobuz_core.py` - shared logic: config, credentials, the Qobuz API, the iTunes fallback, the pure state machine, and the platform "now playing" sources (SMTC + window title on Windows, MPRIS on Linux)
+- `qobuz_rpc.py` - the Tk GUI
+- `qobuz_rpc_cli.py` - the console version
 
 ## Credits
 
