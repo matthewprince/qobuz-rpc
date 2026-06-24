@@ -74,19 +74,29 @@
       </div>
     </div>
 
-    <label for="f-quality">Fallback quality</label>
-    <div class="selwrap">
-      <select id="f-quality">
-        <option>Hi-Res 24-Bit / 192 kHz</option>
-        <option>Hi-Res 24-Bit / 96 kHz</option>
-        <option>CD 16-Bit / 44.1 kHz</option>
-        <option>MP3 320 kbps</option>
-      </select>
-      <i class="ti ti-chevron-down" aria-hidden="true"></i>
+    <label>Fallback quality</label>
+    <div class="select" id="qsel">
+      <button type="button" class="select-btn" id="qbtn" aria-haspopup="listbox" aria-expanded="false">
+        <span id="qlabel">Hi-Res 24-Bit / 96 kHz</span>
+        <i class="ti ti-chevron-down" aria-hidden="true"></i>
+      </button>
+      <ul class="select-menu" id="qmenu" role="listbox" hidden>
+        <li role="option" data-v="Hi-Res 24-Bit / 192 kHz"><span>Hi-Res 24-Bit / 192 kHz</span><i class="ti ti-check" aria-hidden="true"></i></li>
+        <li role="option" data-v="Hi-Res 24-Bit / 96 kHz"><span>Hi-Res 24-Bit / 96 kHz</span><i class="ti ti-check" aria-hidden="true"></i></li>
+        <li role="option" data-v="CD 16-Bit / 44.1 kHz"><span>CD 16-Bit / 44.1 kHz</span><i class="ti ti-check" aria-hidden="true"></i></li>
+        <li role="option" data-v="MP3 320 kbps"><span>MP3 320 kbps</span><i class="ti ti-check" aria-hidden="true"></i></li>
+      </ul>
+      <input type="hidden" id="f-quality">
     </div>
 
     <label for="f-interval">Update interval (seconds)</label>
-    <input id="f-interval" type="number" min="1" value="3">
+    <div class="stepper">
+      <input id="f-interval" type="number" min="1" value="3" inputmode="numeric">
+      <div class="step-btns">
+        <button type="button" class="step-btn step-up" aria-label="Increase"><i class="ti ti-chevron-up" aria-hidden="true"></i></button>
+        <button type="button" class="step-btn step-down" aria-label="Decrease"><i class="ti ti-chevron-down" aria-hidden="true"></i></button>
+      </div>
+    </div>
 
     <div class="hint">Leave blank to use the built-in Discord app and your running Qobuz session.</div>
 
