@@ -6,7 +6,7 @@ except ImportError: print("[!] pip install pypresence"); sys.exit(1)
 # all the shared + platform logic lives in qobuz_core
 from qobuz_core import (
     QobuzAPI, authenticate_qobuz, itunes_lookup, parse, fmt, quality_str, decide,
-    load_cfg, save_cfg, set_pw_hash, now_playing, CONFIG_PATH, DEFAULT_DISCORD_APP_ID,
+    load_cfg, save_cfg, set_pw_hash, now_playing, CONFIG_PATH, DEFAULT_DISCORD_APP_ID, PAUSE_ICON_URL,
 )
 
 
@@ -48,8 +48,13 @@ def main():
     if mode == "none": print("[*] No Qobuz auth, iTunes mode")
 
     def rpc_connect():
+        r = None
         try: r = Presence(app_id); r.connect(); return r
-        except Exception: return None
+        except Exception:
+            try:
+                if r: r.close()
+            except Exception: pass
+            return None
     def rpc_drop(r):
         try:
             if r: r.close()
@@ -76,7 +81,7 @@ def main():
         ltick = now if playing else 0
 
         # reconnect if the Discord IPC pipe dropped (Discord restart/update/sleep)
-        if rpc is None and now - last_reconnect > 15:
+        if rpc is None and now - last_reconnect > 5:
             last_reconnect = now
             rpc = rpc_connect()
             if rpc:
@@ -98,7 +103,16 @@ def main():
                     except Exception: rpc = rpc_drop(rpc); last_reconnect = now
             elif ev == "pause":
                 print(f"  [{ts}] Paused"); last_sig = None
-                if rpc:
+                t = tkey.split("|", 1)[0] if tkey else ""   # title goes blank when paused; tkey keeps it
+                if rpc and t:   # show the track as paused (no timer) rather than clearing
+                    kw = {"details": t[:128], "state": "Paused",
+                        "small_image": PAUSE_ICON_URL, "small_text": "Paused"}
+                    big = tcover or cfg.get("fallback_cover")
+                    if big: kw["large_image"] = big
+                    if talbum: kw["large_text"] = talbum[:128]
+                    try: rpc.update(**kw)
+                    except Exception: rpc = rpc_drop(rpc); last_reconnect = now
+                elif rpc:
                     try: rpc.clear()
                     except Exception: rpc = rpc_drop(rpc); last_reconnect = now
             elif ev == "new":

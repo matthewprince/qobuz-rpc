@@ -53,6 +53,10 @@ CONFIG_PATH = os.path.join(SCRIPT_DIR, "config.json")
 # config["discord_app_id"] overrides it. Leave "" to fall back to asking.
 DEFAULT_DISCORD_APP_ID = "1519198716417020004"   # shared "Qobuz" Discord application
 
+# Pause badge overlaid on the album cover while paused. Discord proxies external
+# image URLs, so no art asset upload is needed. Twemoji pause button (U+23F8).
+PAUSE_ICON_URL = "https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/23f8.png"
+
 # The Qobuz desktop app stores its logged-in session token scoped to a desktop
 # app id. Reusing that token lets search authenticate with zero typing. These
 # ids are known to pair with the desktop token; extraction adds any others.
@@ -493,10 +497,9 @@ def _qobuz_player_position():
     # Live playback position (seconds) from the Qobuz desktop app's state file,
     # %APPDATA%/Qobuz/player-0.json (the Electron app does not publish SMTC, so the
     # window-title scraper has no position; this fills it in). Qobuz rewrites
-    # position.value (ms) + timestamp only about every 10s - value advances while
-    # playing, freezes while paused - so between writes we extrapolate from the
-    # timestamp. If value has not advanced for >12s we treat it as paused and stop
-    # extrapolating. Returns None when the file is stale (app closed) or missing.
+    # position.value (ms) + timestamp only about every 10s, so between writes we
+    # extrapolate from the timestamp; a value that has not advanced for >12s stops
+    # extrapolating. None when the file is stale (app closed) or missing.
     if not IS_WIN: return None
     try:
         path = os.path.join(os.environ.get("APPDATA", ""), "Qobuz", "player-0.json")
@@ -510,8 +513,8 @@ def _qobuz_player_position():
         st = _qpos_state
         if value != st["value"]:
             st["value"] = value; st["changed"] = now_ms
-        if now_ms - st["changed"] > 12000:           # value frozen -> paused, don't extrapolate
-            return max(0.0, value / 1000.0)
+        if now_ms - st["changed"] > 12000:
+            return max(0.0, value / 1000.0)              # frozen value -> don't extrapolate
         return max(0.0, (value + max(0.0, gap)) / 1000.0)
     except Exception:
         return None
