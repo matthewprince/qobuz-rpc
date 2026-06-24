@@ -143,8 +143,10 @@ def main():
                 big = tcover or cfg.get("fallback_cover")
                 if big: kw["large_image"] = big
                 if talbum: kw["large_text"] = talbum[:128]
-                if tstart > 0: kw["start"] = int(tstart)
-                sig = (sample["title"], state, tcover, talbum, kw.get("start"))
+                # send end too so Discord draws the scrubbing bar (start alone = elapsed only)
+                if tdur and tstart > 0: kw["start"] = int(tstart); kw["end"] = int(tstart + tdur / 1000)
+                elif tstart > 0: kw["start"] = int(tstart)
+                sig = (sample["title"], state, tcover, talbum, kw.get("start"), kw.get("end"))
                 if sig != last_sig:
                     try: rpc.update(**kw); last_sig = sig
                     except Exception:

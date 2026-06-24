@@ -193,8 +193,11 @@ class Backend:
                             "details": sample["title"][:128], "state": st_txt[:128]}
                         if tcover: kw["large_image"] = tcover
                         if talbum: kw["large_text"] = talbum[:128]
-                        if tstart > 0: kw["start"] = int(tstart)
-                        sig = (sample["title"], st_txt, tcover, talbum, kw.get("start"))
+                        # send end too, not just start, so Discord draws the scrubbing
+                        # progress bar; start alone renders as a plain elapsed counter
+                        if tdur and tstart > 0: kw["start"] = int(tstart); kw["end"] = int(tstart + tdur / 1000)
+                        elif tstart > 0: kw["start"] = int(tstart)
+                        sig = (sample["title"], st_txt, tcover, talbum, kw.get("start"), kw.get("end"))
                         if sig != last_sig:
                             try: rpc.update(**kw); last_sig = sig
                             except Exception: rpc = rpc_drop(rpc); last_sig = None; last_reconnect = now
