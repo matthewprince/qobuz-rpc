@@ -82,6 +82,7 @@ class App:
         self.qobuz_ok = False
         self.pause_pos = 0.0   # how far into the track we were when paused
         self._last_sig = None  # last payload pushed to discord, to skip dupes
+        self._last_reconnect = 0.0  # backoff timer for discord reconnect attempts
 
         # stats
         self.sess_start = 0.0
@@ -315,11 +316,14 @@ class App:
     def _connect_rpc(self):
         aid = self.cfg.get("discord_app_id", "").strip() or DEFAULT_DISCORD_APP_ID
         if not aid: self.log("No Discord App ID"); return False
+        if self.rpc:   # drop a stale pipe before reconnecting
+            try: self.rpc.close()
+            except Exception: pass
         try:
             self.rpc = Presence(aid); self.rpc.connect()
             self.rpc_ok = True; self.log("Discord connected"); return True
         except Exception as e:
-            self.log(f"Discord failed: {e}"); return False
+            self.rpc = None; self.rpc_ok = False; self.log(f"Discord failed: {e}"); return False
 
     def _disconnect_rpc(self):
         if self.rpc and self.rpc_ok:
@@ -412,6 +416,9 @@ class App:
         while self.monitoring:
             try:
                 now = time.time()
+                if not self.rpc_ok and now - self._last_reconnect > 15:
+                    self._last_reconnect = now   # reconnect if Discord dropped the pipe
+                    if self._connect_rpc(): self._last_sig = None
                 sample = self._sample()
                 st = {"tkey": self.tkey, "tstart": self.tstart, "tdur": self.tdur,
                     "playing": self.playing, "pause_pos": self.pause_pos, "prev_status": self.prev_status}
