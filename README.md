@@ -35,7 +35,7 @@ Windows users can run `setup.bat` instead; Linux/macOS users can run `bash setup
 
 In the common case you don't enter anything.
 
-- **Discord**: a Discord application id is a public client id, not a secret, so the app ships with a built-in one. You don't register your own. (Maintainers/self-builders: set `DEFAULT_DISCORD_APP_ID` in `qobuz_core.py` to your "Qobuz" app's id, and upload a `qobuz_icon` art asset to it.)
+- **Discord**: a Discord application id is a public client id, not a secret, so the app ships with a built-in one. You don't register your own. The presence uses the album cover as its image, so no Discord art assets need to be uploaded. (Maintainers/self-builders: set `DEFAULT_DISCORD_APP_ID` in `qobuz_core.py` to your own "Qobuz" app's id.)
 - **Qobuz (Windows)**: if the Qobuz desktop app is installed and signed in (which it is, since you use it to play music), the app reuses that existing session token automatically. No email or password.
 
 Optional fallbacks, only if the automatic path isn't available (the Linux web player, or no Qobuz desktop app):
